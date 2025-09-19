@@ -1066,8 +1066,8 @@ body::before {
     font-size: 0.8em;
 }
 
-/* Permanent Jitsi Meet Video */
-.permanent-jitsi {
+/* Video Call Section */
+.video-call-section {
     background: rgba(14, 18, 41, 0.9);
     border-radius: 15px;
     padding: 20px;
@@ -1096,17 +1096,64 @@ body::before {
     font-weight: bold;
 }
 
-.video-footer {
-    margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-color);
-    text-align: center;
+/* Video Stream Container */
+.video-stream-container {
+    position: relative;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid var(--border-color);
 }
 
-.video-footer p {
-    margin: 0;
+.video-overlay {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 0.9em;
+}
+
+/* Join Call Section */
+.join-call-section {
+    background: rgba(26, 31, 58, 0.8);
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
+}
+
+.join-call-section h5 {
+    color: var(--primary-color);
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+}
+
+.call-link-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.call-link-input {
+    flex: 1;
+    min-width: 300px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: rgba(14, 18, 41, 0.9);
+    color: var(--text-color);
+    font-family: monospace;
+    font-size: 0.8em;
+}
+
+.call-instructions {
+    margin: 10px 0 0 0;
     color: var(--text-light);
     font-size: 0.9em;
+    text-align: center;
 }
 
 /* Game Video Section */
@@ -1119,12 +1166,114 @@ body::before {
 }
 
 .video-toggle {
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
     margin-bottom: 10px;
+    flex-wrap: wrap;
 }
 
 .game-jitsi {
+    position: relative;
     border-radius: 8px;
     overflow: hidden;
     border: 1px solid var(--primary-color);
+}
+
+.game-video-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.9em;
+    z-index: 10;
+}
+
+/* Camera-Only Stream System */
+.camera-stream-section {
+    background: rgba(26, 31, 58, 0.8);
+    border-radius: 15px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 15px;
+}
+
+.stream-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.stream-header h4 {
+    color: var(--primary-color);
+    font-size: 1.1em;
+    margin: 0;
+}
+
+.stream-status {
+    color: var(--accent-color);
+    font-size: 0.9em;
+    font-weight: bold;
+    padding: 3px 8px;
+    background: rgba(247, 147, 30, 0.2);
+    border-radius: 12px;
+}
+
+.video-viewer {
+    position: relative;
+    margin-bottom: 15px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--dark-bg);
+    border: 2px solid var(--border-color);
+}
+
+.stream-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--text-light);
+    padding: 10px 15px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.9em;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.join-section {
+    background: rgba(14, 18, 41, 0.6);
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
+}
+
+.join-section p {
+    margin: 0 0 10px 0;
+    color: var(--text-light);
+    font-weight: 600;
+}
+
+.join-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.join-info {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    display: block;
+    margin-top: 5px;
 }

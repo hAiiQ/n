@@ -4,24 +4,39 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Superhelden Jeopardy</title>
-    <link href="https://fonts.                        <!-- Dauerhaftes Jitsi Meet Video für alle Spieler -->
-                        <div id="permanent-jitsi-container" class="permanent-jitsi">
-                            <div class="video-header">
-                                <h4>📹 Live Video - 5 Spieler Maximum</h4>
-                                <span class="video-status">🟢 Bereit für Video Chat</span>
+    <link href="https://fonts.google                                                     
+                            <!-- Beitritts-Link für Spieler -->
+                            <div class="join-section">
+                                <h5>🎤 Audio & Video Chat beitreten:</h5>
+                                <div class="join-controls">
+                                    <button id="copy-join-link" class="btn btn-primary">
+                                        📋 Video Chat Link kopieren
+                                    </button>
+                                    <button id="open-video-chat" class="btn btn-success">
+                                        🔗 Video Chat öffnen
+                                    </button>
+                                </div>
+                                <p class="join-instructions">
+                                    💡 Öffne den Video Chat Link in einem separaten Tab für Audio & Video Kommunikation
+                                </p>
                             </div>
-                            <iframe 
-                                id="jitsi-frame"
-                                src=""
-                                width="100%"
-                                height="350"
-                                frameborder="0"
-                                allow="camera; microphone; display-capture; autoplay">
-                            </iframe>
-                            <div class="video-footer">
-                                <p>💡 <strong>Automatisch für alle Spieler verfügbar</strong> - Einfach Browser-Berechtigung für Kamera/Mikro geben!</p>
-                            </div>
-                        </div>.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+                        </div>                         <!-- Read-Only Video Stream -->
+                            <div class="video-viewer">
+                                <iframe 
+                                    id="camera-stream"
+                                    src=""
+                                    width="100%"
+                                    height="350"
+                                    frameborder="0"
+                                    style="pointer-events: none; border-radius: 10px;">
+                                </iframe>
+                                <div class="stream-overlay">
+                                    <div class="overlay-info">
+                                        <span>🎥 Live Video von allen Spielern</span>
+                                        <small>Nur visuelle Übertragung - Zum Sprechen separaten Link nutzen</small>
+                                    </div>
+                                </div>
+                            </div>/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -147,23 +162,6 @@
                 <div class="game-board" id="game-board">
                     <!-- Wird dynamisch generiert -->
                 </div>
-                
-                <!-- Video Chat während des Spiels -->
-                <div class="game-video-section">
-                    <div class="video-toggle">
-                        <button id="toggle-game-video" class="btn btn-ghost">📹 Video ein/aus</button>
-                    </div>
-                    <div id="game-jitsi-container" class="game-jitsi" style="display: block;">
-                        <iframe 
-                            id="game-jitsi-frame"
-                            src=""
-                            width="100%"
-                            height="250"
-                            frameborder="0"
-                            allow="camera; microphone; display-capture">
-                        </iframe>
-                    </div>
-                </div>
 
                 <!-- Fragebereich -->
                 <div id="question-area" class="question-area hidden">
@@ -250,22 +248,33 @@
                             </div>
                         </div>
                         
-                        <div class="jitsi-instructions">
-                            <p><strong>🎯 Video Call System:</strong></p>
-                            <ul>
-                                <li>👨‍� <strong>Admin erstellt</strong> den Video Call Raum</li>
-                                <li>👥 <strong>Spieler treten bei</strong> über den geteilten Link</li>
-                                <li>🎥 <strong>Funktioniert auf allen Geräten</strong> - Chrome, Firefox, Safari, Mobile</li>
-                                <li>🎮 <strong>Spiel läuft parallel</strong> zum Video Call</li>
-                                <li>🔊 <strong>Audio + Video</strong> für beste Kommunikation!</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="jitsi-room-link">
-                            <p><strong>� Raum-Link teilen:</strong></p>
-                            <div class="link-container">
-                                <input type="text" id="jitsi-room-link" readonly placeholder="Jitsi Meet Link wird erstellt...">
-                                <button id="copy-jitsi-link" class="btn btn-ghost">📋 Kopieren</button>
+                        <!-- Camera-Only Stream anzeigen -->
+                        <div class="camera-stream-section">
+                            <div class="stream-header">
+                                <h4>📹 Live Kamera-Stream</h4>
+                                <span class="stream-status">🔴 Nur Kameras (Kein Audio)</span>
+                            </div>
+                            
+                            <!-- Read-only Video Viewer -->
+                            <div class="video-viewer">
+                                <iframe id="camera-stream" 
+                                        src=""
+                                        style="width:100%; height:200px; border:none; border-radius:10px; pointer-events:none;"
+                                        allow="camera; microphone; display-capture;">
+                                </iframe>
+                                <div class="stream-overlay">
+                                    <span>� Nur Ansicht - Kameras werden hier angezeigt</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Separate Join Section -->
+                            <div class="join-section">
+                                <p><strong>🎮 Am Video-Chat teilnehmen:</strong></p>
+                                <div class="join-controls">
+                                    <button id="copy-join-link" class="btn btn-primary">📋 Link kopieren</button>
+                                    <button id="open-video-chat" class="btn btn-secondary">🎥 Video-Chat öffnen</button>
+                                </div>
+                                <small class="join-info">💡 Der Video-Chat öffnet sich in einem neuen Tab</small>
                             </div>
                         </div>
                     </div>

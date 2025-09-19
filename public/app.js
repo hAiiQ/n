@@ -441,13 +441,32 @@ function initializeWebRTC() {
 }
 
 function setupVideoCallControls() {
-    // Video Call beitreten
-    document.getElementById('join-video-call').addEventListener('click', joinVideoCall);
+    // Video Call beitreten (Lobby)
+    const joinLobbyBtn = document.getElementById('join-video-call-lobby');
+    if (joinLobbyBtn) {
+        joinLobbyBtn.addEventListener('click', joinVideoCall);
+    }
+    
+    // Video Call verlassen (Lobby)
+    const leaveLobbyBtn = document.getElementById('leave-video-call-lobby');
+    if (leaveLobbyBtn) {
+        leaveLobbyBtn.addEventListener('click', leaveVideoCall);
+    }
+    
+    // Video Call beitreten (Spiel)
+    const joinGameBtn = document.getElementById('join-video-call');
+    if (joinGameBtn) {
+        joinGameBtn.addEventListener('click', joinVideoCall);
+    }
     
     // Audio/Video Controls
-    document.getElementById('toggle-audio').addEventListener('click', toggleAudio);
-    document.getElementById('toggle-video').addEventListener('click', toggleVideo);
-    document.getElementById('leave-call').addEventListener('click', leaveVideoCall);
+    const toggleAudioBtn = document.getElementById('toggle-audio');
+    const toggleVideoBtn = document.getElementById('toggle-video');
+    const leaveCallBtn = document.getElementById('leave-call');
+    
+    if (toggleAudioBtn) toggleAudioBtn.addEventListener('click', toggleAudio);
+    if (toggleVideoBtn) toggleVideoBtn.addEventListener('click', toggleVideo);
+    if (leaveCallBtn) leaveCallBtn.addEventListener('click', leaveVideoCall);
     
     // Browser-Kompatibilität prüfen
     checkBrowserSupport();
@@ -515,6 +534,7 @@ async function joinVideoCall() {
         isInCall = true;
         updateCallUI();
         updateCallStatus();
+        updateLobbyCallUI();
         
         // WebRTC Peer Connections zu allen anderen Spielern aufbauen
         setupPeerConnections();
@@ -910,6 +930,12 @@ function getPlayerNameById(playerId) {
 }
 
 function displayMyVideo() {
+    // Zeige Video sowohl in Lobby als auch im Spiel an
+    displayMyVideoInGame();
+    displayMyVideoInLobby();
+}
+
+function displayMyVideoInGame() {
     const playerSlot = isAdmin ? 
         document.getElementById('admin-video') : 
         getAvailableVideoSlot();
@@ -942,8 +968,52 @@ function displayMyVideo() {
         playerSlot.setAttribute('data-player-id', socket.id);
         playerSlot.setAttribute('data-is-local', 'true');
         
-        console.log('✅ Eigenes Video angezeigt in Slot:', playerSlot.id);
+        console.log('✅ Eigenes Video angezeigt in Game-Slot:', playerSlot.id);
     }
+}
+
+function displayMyVideoInLobby() {
+    // Video auch in der Lobby-Vorschau anzeigen
+    const lobbySlot = isAdmin ? 
+        document.getElementById('lobby-admin-video') : 
+        getAvailableLobbyVideoSlot();
+    
+    if (lobbySlot) {
+        const video = lobbySlot.querySelector('.mini-video');
+        const placeholder = lobbySlot.querySelector('.video-placeholder');
+        
+        video.srcObject = localVideoStream;
+        video.muted = true;
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        
+        lobbySlot.classList.add('active');
+        
+        // Player Name aktualisieren
+        const label = lobbySlot.querySelector('.player-label');
+        if (label) {
+            label.textContent = isAdmin ? currentLobby.adminName : getPlayerName();
+        }
+        
+        // Lobby Video Preview anzeigen
+        const lobbyPreview = document.getElementById('lobby-video-preview');
+        if (lobbyPreview) {
+            lobbyPreview.style.display = 'block';
+        }
+        
+        console.log('✅ Eigenes Video angezeigt in Lobby-Slot:', lobbySlot.id);
+    }
+}
+
+function getAvailableLobbyVideoSlot() {
+    // Ersten verfügbaren Spieler-Slot in der Lobby finden
+    for (let i = 1; i <= 4; i++) {
+        const slot = document.getElementById(`lobby-player${i}-video`);
+        if (slot && !slot.classList.contains('active')) {
+            return slot;
+        }
+    }
+    return null;
 }
 
 function getAvailableVideoSlot() {
@@ -1078,12 +1148,16 @@ function leaveVideoCall() {
         }
     }
     
+    // Lobby Video auch zurücksetzen
+    resetLobbyVideo();
+    
     isInCall = false;
     localAudioEnabled = true;
     localVideoEnabled = true;
     
     updateCallUI();
     updateCallStatus();
+    updateLobbyCallUI();
     
     showNotification('📵 Video Call verlassen', 'info');
     
@@ -1273,6 +1347,55 @@ function removePlayerVideo(playerId) {
 
 function getPlayerName() {
     return document.getElementById('player-name').value || 'Spieler';
+}
+
+function updateLobbyCallUI() {
+    // Lobby Call Status aktualisieren
+    const lobbyStatus = document.getElementById('lobby-call-status');
+    const lobbyParticipants = document.getElementById('lobby-call-participants');
+    const joinBtn = document.getElementById('join-video-call-lobby');
+    const leaveBtn = document.getElementById('leave-video-call-lobby');
+    
+    if (lobbyStatus && lobbyParticipants) {
+        const participantCount = Object.keys(peerConnections).length + (isInCall ? 1 : 0);
+        lobbyParticipants.textContent = `${participantCount}/5 Teilnehmer`;
+        
+        const indicator = lobbyStatus.querySelector('.status-indicator');
+        if (indicator) {
+            indicator.textContent = isInCall ? '🟢' : '🔴';
+        }
+    }
+    
+    if (joinBtn && leaveBtn) {
+        if (isInCall) {
+            joinBtn.style.display = 'none';
+            leaveBtn.style.display = 'block';
+        } else {
+            joinBtn.style.display = 'block';
+            leaveBtn.style.display = 'none';
+        }
+    }
+}
+
+function resetLobbyVideo() {
+    // Alle aktiven Lobby-Video-Slots zurücksetzen
+    const activeSlots = document.querySelectorAll('.mini-video-slot.active');
+    
+    activeSlots.forEach(slot => {
+        const video = slot.querySelector('.mini-video');
+        const placeholder = slot.querySelector('.video-placeholder');
+        
+        video.style.display = 'none';
+        video.srcObject = null;
+        placeholder.style.display = 'flex';
+        slot.classList.remove('active');
+    });
+    
+    // Lobby Video Preview verstecken
+    const lobbyPreview = document.getElementById('lobby-video-preview');
+    if (lobbyPreview) {
+        lobbyPreview.style.display = 'none';
+    }
 }
 
 // Cleanup beim Verlassen der Seite

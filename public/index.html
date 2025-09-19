@@ -6,7 +6,6 @@
     <title>Superhelden Jeopardy</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://meet.jit.si/external_api.js"></script>
 </head>
 <body>
     <div class="container">
@@ -96,14 +95,77 @@
                     </button>
                 </div>
                 
+                <!-- Video Call Integration in Lobby -->
+                <div class="video-call-section">
+                    <div class="call-header">
+                        <h3>📹 Video Call</h3>
+                        <div class="call-status" id="lobby-call-status">
+                            <span class="status-indicator">🔴</span>
+                            <span id="lobby-call-participants">0/5 Teilnehmer</span>
+                        </div>
+                    </div>
+                    
+                    <div class="call-controls">
+                        <button id="join-video-call-lobby" class="btn btn-success">
+                            <i class="icon">📹</i>
+                            Video Call beitreten
+                        </button>
+                        <button id="leave-video-call-lobby" class="btn btn-danger" style="display: none;">
+                            <i class="icon">📵</i>
+                            Call verlassen
+                        </button>
+                    </div>
+
+                    <!-- Kompakte Video-Vorschau in der Lobby -->
+                    <div class="lobby-video-preview" id="lobby-video-preview" style="display: none;">
+                        <div class="preview-grid">
+                            <div class="mini-video-slot" id="lobby-admin-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">👑</div>
+                                    <div class="player-label">Admin</div>
+                                </div>
+                                <video class="mini-video" autoplay muted playsinline></video>
+                            </div>
+                            <div class="mini-video-slot" id="lobby-player1-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 1</div>
+                                </div>
+                                <video class="mini-video" autoplay muted playsinline></video>
+                            </div>
+                            <div class="mini-video-slot" id="lobby-player2-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 2</div>
+                                </div>
+                                <video class="mini-video" autoplay muted playsinline></video>
+                            </div>
+                            <div class="mini-video-slot" id="lobby-player3-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 3</div>
+                                </div>
+                                <video class="mini-video" autoplay muted playsinline></video>
+                            </div>
+                            <div class="mini-video-slot" id="lobby-player4-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 4</div>
+                                </div>
+                                <video class="mini-video" autoplay muted playsinline></video>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="game-info">
                     <h4>Spielregeln:</h4>
                     <ul>
                         <li>5 Kategorien mit je 5 Fragen</li>
                         <li>2 Runden: 100-500 Punkte → 200-1000 Punkte</li>
                         <li>Falsche Antwort = -50% der Punkte</li>
-                        <li>Voice-Chat über Discord empfohlen</li>
-                        <li>Webcams werden automatisch aktiviert</li>
+                        <li>📹 Video Call für bessere Kommunikation</li>
+                        <li>🎮 Jeopardy mit Marvel Rivals Design</li>
                     </ul>
                 </div>
             </div>
@@ -149,29 +211,87 @@
                     </div>
                 </div>
 
-                <!-- Jitsi Meet Integration -->
-                <div class="jitsi-section">
-                    <div class="jitsi-header">
-                        <h3>📹 Automatischer Video Call für alle Spieler</h3>
+                <!-- Video Call Integration -->
+                <div class="video-call-section">
+                    <div class="call-header">
+                        <h3>📹 Spieler Video Call</h3>
                         <div class="call-status" id="call-status">
-                            <span class="status-indicator">�</span>
-                            <span>Jitsi Meet Call bereit</span>
+                            <span class="status-indicator">🔴</span>
+                            <span id="call-participants">0/5 Teilnehmer</span>
                         </div>
                     </div>
                     
-                    <div class="jitsi-container">
-                        <div id="jitsi-meet" class="jitsi-meet-container">
-                            <!-- Jitsi Meet wird hier automatisch geladen -->
+                    <div class="call-container" id="call-container">
+                        <!-- Automatischer privater Call für alle 5 Spieler -->
+                        <div class="call-grid" id="call-grid">
+                            <div class="player-video-slot" id="admin-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">👑</div>
+                                    <div class="player-label">Admin</div>
+                                    <div class="video-status">Warte auf Verbindung...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player1-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 1</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player2-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 2</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player3-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 3</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player4-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 4</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
                         </div>
                         
-                        <div class="jitsi-controls" id="jitsi-controls">
-                            <button id="toggle-jitsi" class="btn btn-primary">
+                        <div class="call-controls">
+                            <button id="join-video-call" class="btn btn-success">
                                 <i class="icon">📹</i>
-                                Video Call ein/ausblenden
+                                Video Call beitreten
                             </button>
-                            <div class="jitsi-info">
-                                <p><strong>🎯 Automatischer Call:</strong> Alle Spieler werden automatisch in denselben Jitsi Meet Raum eingeladen</p>
-                            </div>
+                            <button id="toggle-audio" class="btn btn-ghost" disabled>
+                                <i class="icon">🎤</i>
+                                Mikro
+                            </button>
+                            <button id="toggle-video" class="btn btn-ghost" disabled>
+                                <i class="icon">📹</i>
+                                Kamera
+                            </button>
+                            <button id="leave-call" class="btn btn-danger" style="display: none;">
+                                <i class="icon">📵</i>
+                                Call verlassen
+                            </button>
+                        </div>
+                        
+                        <div class="call-instructions">
+                            <p><strong>🎯 Automatischer Privat-Call:</strong></p>
+                            <p>Alle 5 Spieler (Admin + 4 Spieler) werden automatisch in einem privaten Video-Call verbunden. Klickt einfach auf "Video Call beitreten" um eure Kamera und Mikro zu aktivieren!</p>
                         </div>
                     </div>
                 </div>

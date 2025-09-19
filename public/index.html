@@ -4,40 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Superhelden Jeopardy</title>
-    <link href="https://fonts.google                                                  
-                            <!-- Beitritts-Link für Spieler -->
-                            <div class="join-section">
-                                <h5>🎤 Audio & Video Chat beitreten:</h5>
-                                <div class="join-controls">
-                                    <button id="copy-join-link" class="btn btn-primary">
-                                        📋 Video Chat Link kopieren
-                                    </button>
-                                    <button id="open-video-chat" class="btn btn-success">
-                                        🔗 Video Chat öffnen
-                                    </button>
-                                </div>
-                                <p class="join-instructions">
-                                    💡 Öffne den Video Chat Link in einem separaten Tab für Audio & Video Kommunikation
-                                </p>
-                            </div>
-                        </div>                         <!-- Read-Only Video Stream -->
-                            <div class="video-viewer">
-                                <iframe 
-                                    id="camera-stream"
-                                    src=""
-                                    width="100%"
-                                    height="350"
-                                    frameborder="0"
-                                    style="pointer-events: none; border-radius: 10px;">
-                                </iframe>
-                                <div class="stream-overlay">
-                                    <div class="overlay-info">
-                                        <span>🎥 Live Video von allen Spielern</span>
-                                        <small>Nur visuelle Übertragung - Zum Sprechen separaten Link nutzen</small>
-                                    </div>
-                                </div>
-                            </div>/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://meet.jit.si/external_api.js"></script>
 </head>
 <body>
     <div class="container">
@@ -183,91 +152,26 @@
                 <!-- Jitsi Meet Integration -->
                 <div class="jitsi-section">
                     <div class="jitsi-header">
-                        <h3>📹 Video Conference</h3>
-                        <div class="jitsi-info">
-                            <span class="room-indicator">🎮</span>
-                            <span id="jitsi-room-name">Raum: Wird erstellt...</span>
+                        <h3>📹 Automatischer Video Call für alle Spieler</h3>
+                        <div class="call-status" id="call-status">
+                            <span class="status-indicator">�</span>
+                            <span>Jitsi Meet Call bereit</span>
                         </div>
                     </div>
                     
                     <div class="jitsi-container">
-                        <!-- Admin Controls -->
-                        <div id="admin-jitsi-controls" class="jitsi-controls" style="display: none;">
-                            <button id="create-video-call" class="btn btn-success">
-                                <i class="icon">�</i>
-                                Video Call erstellen
+                        <div id="jitsi-meet" class="jitsi-meet-container">
+                            <!-- Jitsi Meet wird hier automatisch geladen -->
+                        </div>
+                        
+                        <div class="jitsi-controls" id="jitsi-controls">
+                            <button id="toggle-jitsi" class="btn btn-primary">
+                                <i class="icon">📹</i>
+                                Video Call ein/ausblenden
                             </button>
-                            <button id="stop-video-call" class="btn btn-danger" style="display: none;">
-                                <i class="icon">❌</i>
-                                Video Call beenden
-                            </button>
-                        </div>
-                        
-                        <!-- Spieler Controls -->
-                        <div id="player-jitsi-controls" class="jitsi-controls" style="display: none;">
-                            <button id="join-video-call" class="btn btn-primary">
-                                <i class="icon">📱</i>
-                                Video Call beitreten
-                            </button>
-                        </div>
-                        
-                        <!-- Video Call Status -->
-                        <div id="video-call-status" class="video-call-status" style="display: none;">
-                            <div class="status-header">
-                                <span class="status-indicator">🔴</span>
-                                <span id="call-status-text">Kein Video Call aktiv</span>
+                            <div class="jitsi-info">
+                                <p><strong>🎯 Automatischer Call:</strong> Alle Spieler werden automatisch in denselben Jitsi Meet Raum eingeladen</p>
                             </div>
-                        </div>
-                        
-                        <!-- Jitsi Meet Embed Container -->
-                        <div id="jitsi-embed-container" class="jitsi-embed-container" style="display: none;">
-                            <div class="embed-header">
-                                <span>📹 Live Video Call</span>
-                                <button id="open-in-tab" class="btn btn-ghost btn-sm">
-                                    <i class="icon">�</i>
-                                    In Tab öffnen
-                                </button>
-                            </div>
-                            <div id="jitsi-container"></div>
-                        </div>
-                        
-                        <!-- Room Info für Spieler -->
-                        <div id="room-info" class="room-info" style="display: none;">
-                            <h3>📺 Video Call Raum</h3>
-                            <p>Der Admin hat einen Video Call erstellt.</p>
-                            <div class="room-link" id="room-link"></div>
-                            <div class="room-actions">
-                                <button id="copyRoomLink" class="btn btn-ghost">
-                                    <i class="icon">📋</i>
-                                    Link kopieren
-                                </button>
-                                <button id="open-jitsi-tab" class="btn btn-primary">
-                                    <i class="icon">🔗</i>
-                                    In neuem Tab öffnen
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Camera-Only Stream anzeigen -->
-                        <div class="camera-stream-section">
-                            <div class="stream-header">
-                                <h4>📹 Live Kamera-Stream</h4>
-                                <span class="stream-status">🔴 Nur Kameras (Kein Audio)</span>
-                            </div>
-                            
-                            <!-- Read-only Video Viewer -->
-                            <div class="video-viewer">
-                                <iframe id="camera-stream" 
-                                        src=""
-                                        style="width:100%; height:250px; border:none; border-radius:10px;"
-                                        allow="camera; microphone; display-capture;">
-                                </iframe>
-                                <div class="stream-overlay">
-                                    <span>� Nur Ansicht - Kameras werden hier angezeigt</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Keine Buttons - Call wird automatisch gespiegelt -->
                         </div>
                     </div>
                 </div>
@@ -294,13 +198,7 @@
         <!-- Benachrichtigungen werden hier eingefügt -->
     </div>
 
-    <!-- Jitsi Meet External API -->
-    <script src="https://meet.jit.si/external_api.js"></script>
-    
-    <!-- Socket.io Client -->
     <script src="/socket.io/socket.io.js"></script>
-    
-    <!-- Main App Script -->
     <script src="app.js"></script>
 </body>
 </html>

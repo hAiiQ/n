@@ -6,11 +6,10 @@ let isAdmin = false;
 let currentLobbyCode = null;
 let currentLobby = null;
 let currentQuestionData = null;
-let jitsiApi = null;
-let jitsiRoomName = null;
-
-// Fester Jitsi Meet Call - wird automatisch gespiegelt beim Spielstart
-const FIXED_JITSI_URL = 'https://meet.jit.si/moderated/a6257cb47b52516eb4d31f1f07b7075e7e62573c6ee16c5d10a0edc787630649';
+let localStream = null;
+let peerConnections = {};
+let myVideoSlot = null;
+let playerName = '';
 
 // DOM Elemente
 const screens = {
@@ -64,6 +63,7 @@ document.getElementById('create-lobby-form').addEventListener('submit', (e) => {
     const adminName = document.getElementById('admin-name').value.trim();
     
     if (adminName) {
+        playerName = adminName; // Admin-Name auch global speichern
         isAdmin = true;
         socket.emit('create-lobby', { adminName });
     }
@@ -72,12 +72,13 @@ document.getElementById('create-lobby-form').addEventListener('submit', (e) => {
 // Lobby beitreten
 document.getElementById('join-lobby-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const playerName = document.getElementById('player-name').value.trim();
+    const inputPlayerName = document.getElementById('player-name').value.trim();
     const lobbyCode = document.getElementById('lobby-code').value.trim().toUpperCase();
     
-    if (playerName && lobbyCode) {
+    if (inputPlayerName && lobbyCode) {
+        playerName = inputPlayerName; // Spielername global speichern
         isAdmin = false;
-        socket.emit('join-lobby', { playerName, lobbyCode });
+        socket.emit('join-lobby', { playerName: inputPlayerName, lobbyCode });
     }
 });
 
@@ -143,11 +144,13 @@ socket.on('game-started', (lobby) => {
     currentLobby = lobby;
     initializeGame();
     showScreen('game');
+    showNotification('Spiel gestartet! 🎮 Video-Call wird automatisch gestartet...', 'success');
     
-    // Automatisch den Jitsi Call spiegeln - keine Buttons, einfach nur anzeigen
-    mirrorJitsiCall();
-    
-    showNotification('Spiel gestartet! 📹 Video Call wird automatisch gespiegelt!', 'success');
+    // Automatisch Jitsi Meet Video-Call für alle Spieler starten
+    setTimeout(() => {
+        setupJitsiIntegration();
+        showNotification('🎥 Alle Spieler werden automatisch dem Video-Call hinzugefügt!', 'info');
+    }, 2000);
 });
 
 socket.on('question-selected', (data) => {
@@ -181,7 +184,20 @@ socket.on('error', (message) => {
 
 // Video Call Events
 socket.on('player-joined-call-notification', (data) => {
-    showNotification(`📹 ${data.playerName} nutzt jetzt auch Jitsi Meet!`, 'info');
+    showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
+    
+    // Wenn ich bereits im Call bin, Verbindung zu dem neuen Spieler aufbauen
+    if (isInCall && data.playerId !== socket.id) {
+        const playerName = getPlayerNameById(data.playerId);
+        createPeerConnection(data.playerId, playerName);
+        
+        // Als "Initiator" ein Offer senden
+        setTimeout(() => {
+            createAndSendOffer(data.playerId);
+        }, 1000);
+    }
+    
+    updateCallStatus();
 });
 
 socket.on('player-left-call-notification', (data) => {
@@ -202,21 +218,10 @@ socket.on('player-left-call-notification', (data) => {
     updateCallStatus();
 });
 
-// Video Call Socket Events
-socket.on('video-call-created', (data) => {
-    jitsiRoomName = data.roomName;
-    updateVideoCallUI(true, false); // isActive=true, isAdmin=false
-    showNotification(`📹 ${data.adminName} hat einen Video Call erstellt!`, 'success');
-});
-
-socket.on('video-call-stopped', () => {
-    destroyJitsiMeet();
-    jitsiRoomName = null;
-    updateVideoCallUI(false, false); // isActive=false, isAdmin=false
-    showNotification('📵 Video Call wurde vom Admin beendet', 'info');
-});
-
-// Jitsi Meet Integration
+// WebRTC Signaling Events
+socket.on('webrtc-offer', handleOffer);
+socket.on('webrtc-answer', handleAnswer);
+socket.on('ice-candidate', handleIceCandidate);
 
 function resetVideoSlot(playerSlot) {
     const video = playerSlot.querySelector('.player-video');
@@ -279,9 +284,6 @@ function updateLobbyScreen() {
     // Start Button aktivieren/deaktivieren
     const startBtn = document.getElementById('start-game-btn');
     startBtn.disabled = !isAdmin || currentLobby.players.length === 0;
-    
-    // Video Call UI initialisieren
-    updateVideoCallUI(false, isAdmin);
 }
 
 // Game Initialization
@@ -416,260 +418,467 @@ function processAnswer(correct) {
     }
 }
 
-// Jitsi Meet Integration Status
-let isJitsiActive = false;
-
-// Einfache Funktion: Jitsi Call automatisch spiegeln beim Spielstart
-function mirrorJitsiCall() {
-    // Finde das Video-Element im Game Screen
-    const cameraStream = document.getElementById('camera-stream');
-    
-    if (cameraStream) {
-        // Lade den Call automatisch - keine Buttons, einfach nur anzeigen
-        cameraStream.src = FIXED_JITSI_URL;
-        console.log('📹 Jitsi Call wird automatisch gespiegelt:', FIXED_JITSI_URL);
-    }
-}
-
-function setupVideoCallControls() {
-    // Legacy Admin Controls (optional)
-    const createBtn = document.getElementById('create-video-call');
-    const stopBtn = document.getElementById('stop-video-call');
-    const joinBtn = document.getElementById('join-video-call');
-    
-    if (createBtn) createBtn.addEventListener('click', createVideoCall);
-    if (stopBtn) stopBtn.addEventListener('click', stopVideoCall);
-    if (joinBtn) joinBtn.addEventListener('click', joinVideoCall);
-    
-    // Legacy Shared Controls (optional)
-    const copyBtn = document.getElementById('copyRoomLink');
-    const openBtn = document.getElementById('open-jitsi-tab');
-    const tabBtn = document.getElementById('open-in-tab');
-    
-    if (copyBtn) copyBtn.addEventListener('click', copyRoomLink);
-    if (openBtn) openBtn.addEventListener('click', openJitsiRoom);  
-    if (tabBtn) tabBtn.addEventListener('click', openJitsiRoom);
-}
-
-// Neue Camera-Stream-Controls
-function setupCameraStreamControls() {
-    const copyJoinBtn = document.getElementById('copy-join-link');
-    const openChatBtn = document.getElementById('open-video-chat');
-    
-    if (copyJoinBtn) {
-        copyJoinBtn.addEventListener('click', copyJoinLink);
-    }
-    
-    if (openChatBtn) {
-        openChatBtn.addEventListener('click', openVideoChat);
-    }
-}
-
-// Jitsi Meet benötigt keine Browser-Kompatibilitätsprüfung - läuft überall!
-
-// Admin erstellt Video Call
-function createVideoCall() {
-    if (!isAdmin) {
-        showNotification('❌ Nur der Admin kann Video Calls erstellen!', 'error');
-        return;
-    }
-    
-    if (!currentLobbyCode) {
-        showNotification('❌ Kein Lobby-Code verfügbar', 'error');
-        return;
-    }
-    
-    // Jitsi Meet Room erstellen
-    jitsiRoomName = `jeopardy-${currentLobbyCode}`;
-    
-    // UI aktualisieren
-    updateVideoCallUI(true, true); // isActive=true, isAdmin=true
-    
-    // Alle Spieler benachrichtigen
-    socket.emit('video-call-created', {
-        lobbyCode: currentLobbyCode,
-        roomName: jitsiRoomName,
-        adminName: currentLobby.adminName
-    });
-    
-    showNotification('🎬 Video Call erstellt! Link wurde an alle Spieler gesendet.', 'success');
-}
-
-// Admin beendet Video Call  
-function stopVideoCall() {
-    if (!isAdmin) return;
-    
-    destroyJitsiMeet();
-    updateVideoCallUI(false, true); // isActive=false, isAdmin=true
-    
-    // Alle Spieler benachrichtigen
-    socket.emit('video-call-stopped', {
-        lobbyCode: currentLobbyCode
-    });
-    
-    showNotification('📵 Video Call beendet', 'info');
-}
-
-// Spieler tritt Video Call bei
-function joinVideoCall() {
-    if (!jitsiRoomName) {
-        showNotification('❌ Kein Video Call aktiv', 'error');
-        return;
-    }
-    
-    // Jitsi Meet einbetten
-    initializeJitsiMeet();
-    
-    showNotification('📱 Video Call beigetreten!', 'success');
-}
-
-// Jitsi Meet ist einfacher - keine komplexe Fehlerbehandlung nötig
-
-// Alte WebRTC-Funktionen entfernt - Jitsi Meet ist viel einfacher!
 // Jitsi Meet Integration
+let jitsiAPI;
+let jitsiContainer;
+let isInCall = false;
+
+function setupJitsiIntegration() {
+    setupJitsiControls();
+    initializeJitsiMeet();
+}
+
+function setupJitsiControls() {
+    // Toggle Button für Jitsi Meet ein/ausblenden
+    const toggleButton = document.getElementById('toggle-jitsi');
+    if (toggleButton) {
+        toggleButton.addEventListener('click', () => {
+            const jitsiContainer = document.getElementById('jitsi-meet');
+            if (jitsiContainer) {
+                if (jitsiContainer.classList.contains('hidden')) {
+                    jitsiContainer.classList.remove('hidden');
+                    toggleButton.innerHTML = '<i class="icon">📹</i> Video Call ausblenden';
+                    if (!jitsiAPI) {
+                        initializeJitsiMeet();
+                    }
+                } else {
+                    jitsiContainer.classList.add('hidden');
+                    toggleButton.innerHTML = '<i class="icon">📹</i> Video Call einblenden';
+                }
+            }
+        });
+    }
+}
+
+// Initialize Jitsi Meet when game starts
 function initializeJitsiMeet() {
-    if (!jitsiRoomName) return;
+    if (!currentLobbyCode) {
+        console.error('Kein Lobby-Code verfügbar für Jitsi Meet');
+        return;
+    }
+
+    const roomName = `quizduell-lobby-${currentLobbyCode}`;
+    jitsiContainer = document.getElementById('jitsi-meet');
     
-    // Jitsi Meet Container zeigen
-    const jitsiContainer = document.getElementById('jitsi-container');
-    const embedContainer = document.getElementById('jitsi-embed-container');
+    if (!jitsiContainer) {
+        console.error('Jitsi container nicht gefunden');
+        return;
+    }
+
+    // Show the container
+    jitsiContainer.classList.remove('hidden');
     
-    // Embed Container anzeigen
-    embedContainer.style.display = 'block';
-    
-    // Jitsi Meet API konfigurieren
+    // Jitsi Meet configuration
     const domain = 'meet.jit.si';
     const options = {
-        roomName: jitsiRoomName,
+        roomName: roomName,
         width: '100%',
-        height: '400px',
+        height: '100%',
         parentNode: jitsiContainer,
-        userInfo: {
-            displayName: isAdmin ? currentLobby.adminName : getPlayerName()
-        },
         configOverwrite: {
             startWithAudioMuted: false,
             startWithVideoMuted: false,
-            disableDeepLinking: true,
-            prejoinPageEnabled: false
+            enableWelcomePage: false,
+            prejoinPageEnabled: false,
+            disableThirdPartyRequests: true,
+            disableLocalVideoFlip: false,
         },
         interfaceConfigOverwrite: {
             TOOLBAR_BUTTONS: [
-                'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-                'fodeviceselection', 'hangup', 'profile', 'settings', 'videoquality',
-                'filmstrip', 'stats', 'shortcuts', 'tileview', 'videobackgroundblur'
+                'microphone', 'camera', 'hangup', 'chat', 'tileview'
             ],
-            SETTINGS_SECTIONS: ['devices', 'language', 'moderator', 'profile'],
             SHOW_JITSI_WATERMARK: false,
-            SHOW_WATERMARK_FOR_GUESTS: false
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            DEFAULT_BACKGROUND: '#1a1a2e',
+            MOBILE_APP_PROMO: false
+        },
+        userInfo: {
+            displayName: playerName || `Spieler-${Math.random().toString(36).substr(2, 5)}`
+        }
+    };
+
+    // Create Jitsi Meet instance
+    try {
+        jitsiAPI = new JitsiMeetExternalAPI(domain, options);
+        
+        // Event listeners
+        jitsiAPI.addEventListener('videoConferenceJoined', () => {
+            console.log('Jitsi Meet beigetreten');
+            isInCall = true;
+            updateCallStatus('🎥 Videoanruf aktiv - Alle Spieler können sich sehen!');
+            showNotification('✅ Video-Call erfolgreich gestartet!', 'success');
+        });
+        
+        jitsiAPI.addEventListener('participantJoined', (participant) => {
+            console.log('Teilnehmer beigetreten:', participant.displayName);
+            updateCallStatus(`${participant.displayName} ist dem Call beigetreten`);
+            showNotification(`${participant.displayName} ist dem Video-Call beigetreten`, 'info');
+        });
+        
+        jitsiAPI.addEventListener('participantLeft', (participant) => {
+            console.log('Teilnehmer hat verlassen:', participant.displayName);
+            updateCallStatus(`${participant.displayName} hat den Call verlassen`);
+            showNotification(`${participant.displayName} hat den Video-Call verlassen`, 'info');
+        });
+        
+        jitsiAPI.addEventListener('readyToClose', () => {
+            console.log('Jitsi Meet geschlossen');
+            isInCall = false;
+            updateCallStatus('Video-Call beendet');
+            jitsiAPI = null;
+        });
+
+        jitsiAPI.addEventListener('videoConferenceLeft', () => {
+            console.log('Video-Call verlassen');
+            isInCall = false;
+            updateCallStatus('Sie haben den Video-Call verlassen');
+        });
+        
+    } catch (error) {
+        console.error('Fehler beim Initialisieren von Jitsi Meet:', error);
+        showNotification('❌ Video-Call konnte nicht gestartet werden', 'error');
+    }
+}
+
+// Update call status display
+function updateCallStatus(message) {
+    const statusElement = document.querySelector('.call-status');
+    if (statusElement) {
+        statusElement.innerHTML = `
+            <span class="status-indicator">🎥</span>
+            <span>${message}</span>
+        `;
+    }
+}
+
+// Clean up Jitsi Meet when leaving
+function cleanupJitsiMeet() {
+    if (jitsiAPI) {
+        jitsiAPI.dispose();
+        jitsiAPI = null;
+    }
+    
+    if (jitsiContainer) {
+        jitsiContainer.classList.add('hidden');
+    }
+    
+    isInCall = false;
+    updateCallStatus('Video-Call beendet');
+}
+        updateCallStatus();
+        
+        showNotification('📹 Video Call beigetreten! Verbinde mit anderen Spielern...', 'success');
+        
+        // Anderen Spielern mitteilen dass ich beigetreten bin
+        socket.emit('player-joined-call', {
+            lobbyCode: currentLobbyCode,
+            playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+            playerId: socket.id
+        });
+        
+
+
+function showHTTPSWarning() {
+    showNotification('🔒 HTTPS erforderlich für Webcam-Zugriff! Render.com nutzt automatisch HTTPS.', 'error');
+    
+    // Alternative Lösung anbieten
+    const httpsUrl = window.location.href.replace('http://', 'https://');
+    if (httpsUrl !== window.location.href) {
+        setTimeout(() => {
+            if (confirm('Möchten Sie zur sicheren HTTPS-Version wechseln?')) {
+                window.location.href = httpsUrl;
+            }
+        }, 2000);
+    }
+}
+
+function handleMediaError(error) {
+    let message = '❌ Webcam/Mikrofon Zugriff fehlgeschlagen: ';
+    
+    switch(error.name) {
+        case 'NotAllowedError':
+        case 'PermissionDeniedError':
+            message += 'Berechtigung verweigert. Klicken Sie auf "Zulassen" wenn der Browser fragt!';
+            break;
+        case 'NotFoundError':
+        case 'DevicesNotFoundError':
+            message += 'Keine Kamera/Mikrofon gefunden. Schließen Sie ein Gerät an!';
+            break;
+        case 'NotReadableError':
+        case 'TrackStartError':
+            message += 'Kamera/Mikrofon wird bereits verwendet. Schließen Sie andere Apps!';
+            break;
+        case 'OverconstrainedError':
+        case 'ConstraintNotSatisfiedError':
+            message += 'Kamera unterstützt nicht die angeforderte Qualität. Versuchen Sie es erneut!';
+            // Fallback mit niedrigerer Qualität
+            tryLowerQualityVideo();
+            return;
+        case 'NotSupportedError':
+            message += 'Webcam/Mikrofon wird von diesem Browser nicht unterstützt!';
+            break;
+        case 'TypeError':
+            message += 'Browser-Problem. Versuchen Sie Chrome, Firefox oder Safari!';
+            break;
+        default:
+            message += `Unbekannter Fehler (${error.name}). Browser neu laden?`;
+    }
+    
+    showNotification(message, 'error');
+    showVideoCallTroubleshooting();
+}
+
+async function tryLowerQualityVideo() {
+    try {
+        // Fallback mit niedrigerer Qualität
+        localVideoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 320, max: 640 }, 
+                height: { ideal: 240, max: 480 },
+                facingMode: 'user'
+            }, 
+            audio: { 
+                echoCancellation: true,
+                noiseSuppression: true
+            } 
+        });
+        
+        displayLocalVideo();
+        isInCall = true;
+        updateCallUI();
+        updateCallStatus();
+        
+        showNotification('📹 Video Call mit reduzierter Qualität gestartet!', 'success');
+        
+        socket.emit('player-joined-call', {
+            lobbyCode: currentLobbyCode,
+            playerName: isAdmin ? currentLobby.adminName : getPlayerName()
+        });
+        
+    } catch (fallbackError) {
+        console.error('Auch Fallback fehlgeschlagen:', fallbackError);
+        showNotification('❌ Auch mit reduzierter Qualität nicht möglich. Spielen Sie ohne Video weiter!', 'error');
+    }
+}
+
+function showVideoCallTroubleshooting() {
+    const troubleshootMsg = `
+🔧 Lösungsvorschläge:
+
+1. 🔒 HTTPS verwenden (automatisch auf Render.com)
+2. 🎯 Auf "Zulassen" klicken wenn Browser fragt
+3. 📹 Kamera/Mikrofon anschließen und testen
+4. 🔄 Andere Apps schließen die Kamera nutzen
+5. 🌐 Chrome, Firefox oder Safari verwenden
+6. 📱 Bei mobilen Geräten: App-Berechtigungen prüfen
+
+Das Spiel funktioniert auch ohne Video! 🎮
+    `;
+    
+    setTimeout(() => {
+        alert(troubleshootMsg);
+    }, 3000);
+}
+
+// WebRTC Peer-to-Peer Verbindungen
+function setupPeerConnections() {
+    // Für alle anderen Spieler in der Lobby Peer Connections erstellen
+    const allPlayers = [...currentLobby.players];
+    if (isAdmin) {
+        // Admin ist nicht in players Array, aber andere sollen ihn sehen
+        allPlayers.forEach(player => {
+            if (player.id !== socket.id) {
+                createPeerConnection(player.id, player.name);
+            }
+        });
+    } else {
+        // Verbindung zum Admin
+        createPeerConnection(currentLobby.admin, currentLobby.adminName);
+        
+        // Verbindung zu anderen Spielern
+        allPlayers.forEach(player => {
+            if (player.id !== socket.id) {
+                createPeerConnection(player.id, player.name);
+            }
+        });
+    }
+}
+
+function createPeerConnection(playerId, playerName) {
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+    };
+    
+    const peerConnection = new RTCPeerConnection(configuration);
+    peerConnections[playerId] = peerConnection;
+    
+    // Lokalen Stream zur Peer Connection hinzufügen
+    if (localVideoStream) {
+        localVideoStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localVideoStream);
+        });
+    }
+    
+    // Remote Stream empfangen
+    peerConnection.ontrack = (event) => {
+        console.log('Remote stream empfangen von:', playerName);
+        const remoteStream = event.streams[0];
+        displayRemoteVideo(remoteStream, playerId, playerName);
+    };
+    
+    // ICE Candidate Event
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', {
+                target: playerId,
+                candidate: event.candidate,
+                lobbyCode: currentLobbyCode
+            });
         }
     };
     
-    // Jitsi Meet API laden und initialisieren
-    if (window.JitsiMeetExternalAPI) {
-        // Vorherige Instanz schließen
-        if (jitsiApi) {
-            jitsiApi.dispose();
+    // Connection State Monitoring
+    peerConnection.onconnectionstatechange = () => {
+        console.log(`Connection zu ${playerName}: ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'connected') {
+            showNotification(`✅ Verbunden mit ${playerName}`, 'success');
+        } else if (peerConnection.connectionState === 'failed') {
+            showNotification(`❌ Verbindung zu ${playerName} fehlgeschlagen`, 'error');
         }
-        
-        jitsiApi = new JitsiMeetExternalAPI(domain, options);
-        
-        jitsiApi.addEventListener('videoConferenceJoined', () => {
-            showNotification('✅ Video Call beigetreten', 'success');
-        });
-        
-        jitsiApi.addEventListener('videoConferenceLeft', () => {
-            showNotification('📵 Video Call verlassen', 'info');
-        });
-        
-        jitsiApi.addEventListener('participantJoined', (participant) => {
-            showNotification(`👋 ${participant.displayName} ist beigetreten`, 'info');
-        });
-        
-        jitsiApi.addEventListener('participantLeft', (participant) => {
-            showNotification(`👋 ${participant.displayName} hat verlassen`, 'info');  
-        });
-    } else {
-        console.error('Jitsi Meet API nicht geladen');
-        showNotification('❌ Video Call Fehler: API nicht verfügbar', 'error');
-    }
+    };
+    
+    return peerConnection;
 }
 
-function updateVideoCallUI(isActive, isAdminUser) {
-    const adminControls = document.getElementById('admin-jitsi-controls');
-    const playerControls = document.getElementById('player-jitsi-controls');
-    const videoStatus = document.getElementById('video-call-status');
-    const roomInfo = document.getElementById('room-info');
-    const statusText = document.getElementById('call-status-text');
-    const statusIndicator = document.querySelector('.status-indicator');
-    const roomLink = document.getElementById('room-link');
+function displayRemoteVideo(stream, playerId, playerName) {
+    // Freien Video-Slot finden (nicht den eigenen)
+    const availableSlots = document.querySelectorAll('.player-video-slot:not(.active)');
     
-    // Admin UI
-    if (isAdminUser) {
-        adminControls.style.display = 'block';
-        playerControls.style.display = 'none';
-        
-        if (isActive) {
-            document.getElementById('create-video-call').style.display = 'none';
-            document.getElementById('stop-video-call').style.display = 'inline-flex';
-        } else {
-            document.getElementById('create-video-call').style.display = 'inline-flex';
-            document.getElementById('stop-video-call').style.display = 'none';
-        }
-    } else {
-        // Spieler UI
-        adminControls.style.display = 'none';
-        
-        if (isActive) {
-            playerControls.style.display = 'block';
-            roomInfo.style.display = 'block';
-        } else {
-            playerControls.style.display = 'none';
-            roomInfo.style.display = 'none';
-        }
+    let targetSlot = null;
+    
+    // Prüfe ob Admin-Slot verfügbar ist (wenn Remote-Player Admin ist)
+    if (playerId === currentLobby.admin && !document.getElementById('admin-video').classList.contains('active')) {
+        targetSlot = document.getElementById('admin-video');
+        targetSlot.classList.add('admin');
+    } else if (availableSlots.length > 0) {
+        targetSlot = availableSlots[0];
     }
     
-    // Status aktualisieren
-    videoStatus.style.display = 'block';
-    if (isActive) {
-        statusText.textContent = 'Video Call aktiv';
-        statusIndicator.textContent = '🟢';
+    if (targetSlot) {
+        const video = targetSlot.querySelector('.player-video');
+        const placeholder = targetSlot.querySelector('.video-placeholder');
         
-        // Room Link anzeigen
-        if (jitsiRoomName) {
-            const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}`;
-            roomLink.textContent = jitsiUrl;
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = false; // Remote Videos nicht stumm
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        
+        targetSlot.classList.add('active');
+        targetSlot.setAttribute('data-player-id', playerId);
+        
+        // Player Name aktualisieren
+        const label = targetSlot.querySelector('.player-label');
+        if (label) {
+            label.textContent = playerName;
         }
+        
+        // Remote Video Status Overlay
+        addRemoteVideoStatusOverlay(targetSlot, playerId);
+        
+        console.log(`Remote Video angezeigt für ${playerName}`);
+        updateCallStatus();
     } else {
-        statusText.textContent = 'Kein Video Call aktiv';
-        statusIndicator.textContent = '🔴';
-        roomInfo.style.display = 'none';
+        console.warn('Kein freier Video-Slot für', playerName);
     }
 }
 
-function copyRoomLink() {
-    const roomLink = document.getElementById('room-link');
-    if (roomLink) {
-        navigator.clipboard.writeText(roomLink.textContent).then(() => {
-            showNotification('📋 Raum-Link kopiert!', 'success');
-        }).catch(() => {
-            // Fallback für ältere Browser
-            const textArea = document.createElement('textarea');
-            textArea.value = roomLink.textContent;
-            document.body.appendChild(textArea);
-            textArea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textArea);
-            showNotification('📋 Raum-Link kopiert!', 'success');
+function addRemoteVideoStatusOverlay(playerSlot, playerId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'video-overlay';
+    overlay.innerHTML = `
+        <div class="mic-status active">
+            <span>🎤</span>
+        </div>
+        <div class="cam-status active">
+            <span>📹</span>
+        </div>
+    `;
+    playerSlot.appendChild(overlay);
+}
+
+// WebRTC Offer/Answer Handling
+async function createAndSendOffer(playerId) {
+    const peerConnection = peerConnections[playerId];
+    if (peerConnection) {
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            socket.emit('webrtc-offer', {
+                target: playerId,
+                offer: offer,
+                lobbyCode: currentLobbyCode
+            });
+        } catch (error) {
+            console.error('Fehler beim Erstellen des Offers:', error);
+        }
+    }
+}
+
+async function handleOffer(data) {
+    const { from, offer } = data;
+    
+    if (!peerConnections[from]) {
+        // Peer Connection erstellen falls noch nicht vorhanden
+        const playerName = getPlayerNameById(from);
+        createPeerConnection(from, playerName);
+    }
+    
+    const peerConnection = peerConnections[from];
+    
+    try {
+        await peerConnection.setRemoteDescription(offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        socket.emit('webrtc-answer', {
+            target: from,
+            answer: answer,
+            lobbyCode: currentLobbyCode
         });
+    } catch (error) {
+        console.error('Fehler bei Offer-Verarbeitung:', error);
     }
 }
 
-function openJitsiRoom() {
-    if (jitsiRoomName) {
-        const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}`;
-        window.open(jitsiUrl, '_blank');
-        showNotification('🔗 Jitsi Meet Raum in neuem Tab geöffnet', 'info');
+async function handleAnswer(data) {
+    const { from, answer } = data;
+    const peerConnection = peerConnections[from];
+    
+    if (peerConnection) {
+        try {
+            await peerConnection.setRemoteDescription(answer);
+        } catch (error) {
+            console.error('Fehler bei Answer-Verarbeitung:', error);
+        }
+    }
+}
+
+async function handleIceCandidate(data) {
+    const { from, candidate } = data;
+    const peerConnection = peerConnections[from];
+    
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (error) {
+            console.error('Fehler bei ICE-Candidate:', error);
+        }
     }
 }
 
@@ -682,32 +891,47 @@ function getPlayerNameById(playerId) {
     return player ? player.name : 'Unbekannt';
 }
 
-function destroyJitsiMeet() {
-    if (jitsiApi) {
-        jitsiApi.dispose();
-        jitsiApi = null;
+function displayLocalVideo() {
+    const playerSlot = isAdmin ? 
+        document.getElementById('admin-video') : 
+        getPlayerVideoSlot();
+    
+    if (playerSlot) {
+        myVideoSlot = playerSlot;
+        const video = playerSlot.querySelector('.player-video');
+        const placeholder = playerSlot.querySelector('.video-placeholder');
+        
+        video.srcObject = localVideoStream;
+        video.muted = true; // Eigenes Video stumm schalten
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        
+        playerSlot.classList.add('active');
+        if (isAdmin) playerSlot.classList.add('admin');
+        
+        // Player Name aktualisieren
+        const label = playerSlot.querySelector('.player-label');
+        if (label) {
+            label.textContent = isAdmin ? currentLobby.adminName : getPlayerName();
+        }
+        
+        // Video Status Overlay hinzufügen
+        addVideoStatusOverlay(playerSlot);
+        
+        // Markiere als eigenes Video
+        playerSlot.setAttribute('data-player-id', socket.id);
     }
 }
 
-// Camera-Stream Funktionen
-function copyJoinLink() {
-    navigator.clipboard.writeText(FIXED_JITSI_URL).then(() => {
-        showNotification('📋 Video Chat Link kopiert! Teile ihn mit den anderen Spielern.', 'success');
-    }).catch(() => {
-        // Fallback für ältere Browser
-        const textArea = document.createElement('textarea');
-        textArea.value = FIXED_JITSI_URL;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        showNotification('📋 Video Chat Link kopiert!', 'success');
-    });
-}
-
-function openVideoChat() {
-    window.open(FIXED_JITSI_URL, '_blank', 'noopener,noreferrer');
-    showNotification('🎥 Video Chat in neuem Tab geöffnet - Du kannst jetzt beitreten!', 'success');
+function getPlayerVideoSlot() {
+    // Finde den ersten verfügbaren Spieler-Slot
+    for (let i = 1; i <= 4; i++) {
+        const slot = document.getElementById(`player${i}-video`);
+        if (slot && !slot.classList.contains('active')) {
+            return slot;
+        }
+    }
+    return null;
 }
 
 function getPlayerName() {
@@ -719,11 +943,171 @@ function getPlayerName() {
     return 'Spieler';
 }
 
-// Jitsi Meet Hilfsfunktionen
-function cleanupJitsiMeet() {
-    destroyJitsiMeet();
-    jitsiRoomName = null;
-    updateJitsiStatus(false);
+function addVideoStatusOverlay(playerSlot) {
+    const overlay = document.createElement('div');
+    overlay.className = 'video-overlay';
+    overlay.innerHTML = `
+        <div class="mic-status ${localAudioEnabled ? 'active' : 'muted'}">
+            <span>${localAudioEnabled ? '🎤' : '🔇'}</span>
+        </div>
+        <div class="cam-status ${localVideoEnabled ? 'active' : 'off'}">
+            <span>${localVideoEnabled ? '📹' : '📷'}</span>
+        </div>
+    `;
+    playerSlot.appendChild(overlay);
+}
+
+function toggleAudio() {
+    if (localVideoStream) {
+        const audioTracks = localVideoStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+            localAudioEnabled = !localAudioEnabled;
+            audioTracks[0].enabled = localAudioEnabled;
+            
+            updateAudioButton();
+            updateVideoStatusOverlay();
+            
+            showNotification(localAudioEnabled ? '🎤 Mikrofon aktiviert' : '🔇 Mikrofon deaktiviert', 'info');
+        }
+    }
+}
+
+function toggleVideo() {
+    if (localVideoStream) {
+        const videoTracks = localVideoStream.getVideoTracks();
+        if (videoTracks.length > 0) {
+            localVideoEnabled = !localVideoEnabled;
+            videoTracks[0].enabled = localVideoEnabled;
+            
+            updateVideoButton();
+            updateVideoStatusOverlay();
+            
+            showNotification(localVideoEnabled ? '📹 Kamera aktiviert' : '📷 Kamera deaktiviert', 'info');
+        }
+    }
+}
+
+function updateAudioButton() {
+    const audioBtn = document.getElementById('toggle-audio');
+    audioBtn.className = `btn ${localAudioEnabled ? 'btn-success' : 'btn-danger'}`;
+    audioBtn.innerHTML = `<i class="icon">${localAudioEnabled ? '🎤' : '🔇'}</i> Mikro`;
+}
+
+function updateVideoButton() {
+    const videoBtn = document.getElementById('toggle-video');
+    videoBtn.className = `btn ${localVideoEnabled ? 'btn-success' : 'btn-danger'}`;
+    videoBtn.innerHTML = `<i class="icon">${localVideoEnabled ? '📹' : '📷'}</i> Kamera`;
+}
+
+function updateVideoStatusOverlay() {
+    const activeSlot = document.querySelector('.player-video-slot.active .video-overlay');
+    if (activeSlot) {
+        const micStatus = activeSlot.querySelector('.mic-status');
+        const camStatus = activeSlot.querySelector('.cam-status');
+        
+        micStatus.className = `mic-status ${localAudioEnabled ? 'active' : 'muted'}`;
+        micStatus.innerHTML = `<span>${localAudioEnabled ? '🎤' : '🔇'}</span>`;
+        
+        camStatus.className = `cam-status ${localVideoEnabled ? 'active' : 'off'}`;
+        camStatus.innerHTML = `<span>${localVideoEnabled ? '📹' : '📷'}</span>`;
+    }
+}
+
+function leaveVideoCall() {
+    if (localVideoStream) {
+        localVideoStream.getTracks().forEach(track => track.stop());
+        localVideoStream = null;
+    }
+    
+    // UI zurücksetzen
+    const activeSlot = document.querySelector('.player-video-slot.active');
+    if (activeSlot) {
+        const video = activeSlot.querySelector('.player-video');
+        const placeholder = activeSlot.querySelector('.video-placeholder');
+        const overlay = activeSlot.querySelector('.video-overlay');
+        
+        video.style.display = 'none';
+        placeholder.style.display = 'flex';
+        activeSlot.classList.remove('active', 'admin');
+        
+        if (overlay) overlay.remove();
+        
+        // Status zurücksetzen
+        const statusText = placeholder.querySelector('.video-status');
+        if (statusText) {
+            statusText.textContent = isAdmin ? 'Warte auf Verbindung...' : 'Wartet auf Beitritt...';
+        }
+    }
+    
+    isInCall = false;
+    localAudioEnabled = true;
+    localVideoEnabled = true;
+    
+    updateCallUI();
+    updateCallStatus();
+    
+    showNotification('📵 Video Call verlassen', 'info');
+    
+    // Alle Peer Connections schließen
+    Object.values(peerConnections).forEach(pc => {
+        pc.close();
+    });
+    peerConnections = {};
+    myVideoSlot = null;
+    
+    // Anderen mitteilen
+    socket.emit('player-left-call', {
+        lobbyCode: currentLobbyCode,
+        playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+        playerId: socket.id
+    });
+}
+
+function updateCallUI() {
+    const joinBtn = document.getElementById('join-video-call');
+    const audioBtn = document.getElementById('toggle-audio');
+    const videoBtn = document.getElementById('toggle-video');
+    const leaveBtn = document.getElementById('leave-call');
+    
+    if (isInCall) {
+        joinBtn.style.display = 'none';
+        audioBtn.disabled = false;
+        videoBtn.disabled = false;
+        leaveBtn.style.display = 'inline-flex';
+        
+        updateAudioButton();
+        updateVideoButton();
+    } else {
+        joinBtn.style.display = 'inline-flex';
+        audioBtn.disabled = true;
+        videoBtn.disabled = true;
+        leaveBtn.style.display = 'none';
+        
+        // Buttons zurücksetzen
+        audioBtn.className = 'btn btn-ghost';
+        audioBtn.innerHTML = '<i class="icon">🎤</i> Mikro';
+        videoBtn.className = 'btn btn-ghost';
+        videoBtn.innerHTML = '<i class="icon">📹</i> Kamera';
+    }
+}
+
+function updateCallStatus() {
+    const statusElement = document.getElementById('call-participants');
+    const indicator = document.querySelector('.status-indicator');
+    
+    let participantCount = 0;
+    const totalParticipants = (currentLobby ? currentLobby.players.length : 0) + 1; // +1 für Admin
+    
+    // Zähle aktive Video-Slots
+    participantCount = document.querySelectorAll('.player-video-slot.active').length;
+    
+    statusElement.textContent = `${participantCount}/${totalParticipants} Teilnehmer`;
+    
+    if (participantCount > 0) {
+        indicator.textContent = '🟢';
+    } else {
+        indicator.textContent = '🔴';
+    }
 }
 
 // Discord Integration - Keine komplexen WebRTC Events mehr nötig
@@ -777,8 +1161,14 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
 });
 
 document.getElementById('home-btn').addEventListener('click', () => {
-    // Jitsi Meet cleanup
-    cleanupJitsiMeet();
+    // Video Call verlassen falls aktiv
+    if (isInCall) {
+        leaveVideoCall();
+    }
+    
+    // Alle Peer Connections schließen
+    Object.values(peerConnections).forEach(pc => pc.close());
+    peerConnections = {};
     
     // Zum Hauptmenü zurückkehren
     socket.disconnect();
@@ -787,6 +1177,7 @@ document.getElementById('home-btn').addEventListener('click', () => {
     currentLobbyCode = null;
     currentLobby = null;
     isAdmin = false;
+    myVideoSlot = null;
     
     showScreen('start');
 });

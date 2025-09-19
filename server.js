@@ -168,15 +168,49 @@ io.on('connection', (socket) => {
     
     // Video Call Events
     socket.on('player-joined-call', (data) => {
-        const { lobbyCode, playerName } = data;
-        socket.to(lobbyCode).emit('player-joined-call-notification', { playerName });
+        const { lobbyCode, playerName, playerId } = data;
+        socket.to(lobbyCode).emit('player-joined-call-notification', { 
+            playerName, 
+            playerId: playerId || socket.id 
+        });
         console.log(`${playerName} ist dem Video Call in Lobby ${lobbyCode} beigetreten`);
     });
     
     socket.on('player-left-call', (data) => {
-        const { lobbyCode, playerName } = data;
-        socket.to(lobbyCode).emit('player-left-call-notification', { playerName });
+        const { lobbyCode, playerName, playerId } = data;
+        socket.to(lobbyCode).emit('player-left-call-notification', { 
+            playerName, 
+            playerId: playerId || socket.id 
+        });
         console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen`);
+    });
+    
+    // WebRTC Signaling
+    socket.on('webrtc-offer', (data) => {
+        const { target, offer, lobbyCode } = data;
+        socket.to(target).emit('webrtc-offer', {
+            from: socket.id,
+            offer: offer
+        });
+        console.log(`WebRTC Offer von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
+    });
+    
+    socket.on('webrtc-answer', (data) => {
+        const { target, answer, lobbyCode } = data;
+        socket.to(target).emit('webrtc-answer', {
+            from: socket.id,
+            answer: answer
+        });
+        console.log(`WebRTC Answer von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
+    });
+    
+    socket.on('ice-candidate', (data) => {
+        const { target, candidate, lobbyCode } = data;
+        socket.to(target).emit('ice-candidate', {
+            from: socket.id,
+            candidate: candidate
+        });
+        console.log(`ICE Candidate von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
     });
     
     // Verbindung getrennt

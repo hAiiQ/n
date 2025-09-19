@@ -8,6 +8,7 @@ let currentLobby = null;
 let currentQuestionData = null;
 let localStream = null;
 let peerConnections = {};
+let myVideoSlot = null;
 
 // DOM Elemente
 const screens = {
@@ -178,13 +179,63 @@ socket.on('error', (message) => {
 // Video Call Events
 socket.on('player-joined-call-notification', (data) => {
     showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
+    
+    // Wenn ich bereits im Call bin, Verbindung zu dem neuen Spieler aufbauen
+    if (isInCall && data.playerId !== socket.id) {
+        const playerName = getPlayerNameById(data.playerId);
+        createPeerConnection(data.playerId, playerName);
+        
+        // Als "Initiator" ein Offer senden
+        setTimeout(() => {
+            createAndSendOffer(data.playerId);
+        }, 1000);
+    }
+    
     updateCallStatus();
 });
 
 socket.on('player-left-call-notification', (data) => {
     showNotification(`📵 ${data.playerName} hat den Video Call verlassen`, 'info');
+    
+    // Peer Connection schließen und Video entfernen
+    if (data.playerId && peerConnections[data.playerId]) {
+        peerConnections[data.playerId].close();
+        delete peerConnections[data.playerId];
+        
+        // Video-Slot zurücksetzen
+        const playerSlot = document.querySelector(`[data-player-id="${data.playerId}"]`);
+        if (playerSlot && playerSlot !== myVideoSlot) {
+            resetVideoSlot(playerSlot);
+        }
+    }
+    
     updateCallStatus();
 });
+
+// WebRTC Signaling Events
+socket.on('webrtc-offer', handleOffer);
+socket.on('webrtc-answer', handleAnswer);
+socket.on('ice-candidate', handleIceCandidate);
+
+function resetVideoSlot(playerSlot) {
+    const video = playerSlot.querySelector('.player-video');
+    const placeholder = playerSlot.querySelector('.video-placeholder');
+    const overlay = playerSlot.querySelector('.video-overlay');
+    
+    video.style.display = 'none';
+    video.srcObject = null;
+    placeholder.style.display = 'flex';
+    playerSlot.classList.remove('active', 'admin');
+    playerSlot.removeAttribute('data-player-id');
+    
+    if (overlay) overlay.remove();
+    
+    // Status Text zurücksetzen
+    const statusText = placeholder.querySelector('.video-status');
+    if (statusText) {
+        statusText.textContent = 'Wartet auf Beitritt...';
+    }
+}
 
 // Lobby Screen Update
 function updateLobbyScreen() {
@@ -443,17 +494,21 @@ async function joinVideoCall() {
         // Eigenes Video anzeigen
         displayLocalVideo();
         
+        // WebRTC Peer Connections für andere Spieler erstellen
+        setupPeerConnections();
+        
         // UI aktualisieren
         isInCall = true;
         updateCallUI();
         updateCallStatus();
         
-        showNotification('📹 Video Call beigetreten! Andere Spieler können euch jetzt sehen.', 'success');
+        showNotification('📹 Video Call beigetreten! Verbinde mit anderen Spielern...', 'success');
         
-        // Anderen Spielern mitteilen
+        // Anderen Spielern mitteilen dass ich beigetreten bin
         socket.emit('player-joined-call', {
             lobbyCode: currentLobbyCode,
-            playerName: isAdmin ? currentLobby.adminName : getPlayerName()
+            playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+            playerId: socket.id
         });
         
     } catch (error) {
@@ -564,16 +619,229 @@ Das Spiel funktioniert auch ohne Video! 🎮
     }, 3000);
 }
 
+// WebRTC Peer-to-Peer Verbindungen
+function setupPeerConnections() {
+    // Für alle anderen Spieler in der Lobby Peer Connections erstellen
+    const allPlayers = [...currentLobby.players];
+    if (isAdmin) {
+        // Admin ist nicht in players Array, aber andere sollen ihn sehen
+        allPlayers.forEach(player => {
+            if (player.id !== socket.id) {
+                createPeerConnection(player.id, player.name);
+            }
+        });
+    } else {
+        // Verbindung zum Admin
+        createPeerConnection(currentLobby.admin, currentLobby.adminName);
+        
+        // Verbindung zu anderen Spielern
+        allPlayers.forEach(player => {
+            if (player.id !== socket.id) {
+                createPeerConnection(player.id, player.name);
+            }
+        });
+    }
+}
+
+function createPeerConnection(playerId, playerName) {
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+    };
+    
+    const peerConnection = new RTCPeerConnection(configuration);
+    peerConnections[playerId] = peerConnection;
+    
+    // Lokalen Stream zur Peer Connection hinzufügen
+    if (localVideoStream) {
+        localVideoStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localVideoStream);
+        });
+    }
+    
+    // Remote Stream empfangen
+    peerConnection.ontrack = (event) => {
+        console.log('Remote stream empfangen von:', playerName);
+        const remoteStream = event.streams[0];
+        displayRemoteVideo(remoteStream, playerId, playerName);
+    };
+    
+    // ICE Candidate Event
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', {
+                target: playerId,
+                candidate: event.candidate,
+                lobbyCode: currentLobbyCode
+            });
+        }
+    };
+    
+    // Connection State Monitoring
+    peerConnection.onconnectionstatechange = () => {
+        console.log(`Connection zu ${playerName}: ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'connected') {
+            showNotification(`✅ Verbunden mit ${playerName}`, 'success');
+        } else if (peerConnection.connectionState === 'failed') {
+            showNotification(`❌ Verbindung zu ${playerName} fehlgeschlagen`, 'error');
+        }
+    };
+    
+    return peerConnection;
+}
+
+function displayRemoteVideo(stream, playerId, playerName) {
+    // Freien Video-Slot finden (nicht den eigenen)
+    const availableSlots = document.querySelectorAll('.player-video-slot:not(.active)');
+    
+    let targetSlot = null;
+    
+    // Prüfe ob Admin-Slot verfügbar ist (wenn Remote-Player Admin ist)
+    if (playerId === currentLobby.admin && !document.getElementById('admin-video').classList.contains('active')) {
+        targetSlot = document.getElementById('admin-video');
+        targetSlot.classList.add('admin');
+    } else if (availableSlots.length > 0) {
+        targetSlot = availableSlots[0];
+    }
+    
+    if (targetSlot) {
+        const video = targetSlot.querySelector('.player-video');
+        const placeholder = targetSlot.querySelector('.video-placeholder');
+        
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = false; // Remote Videos nicht stumm
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        
+        targetSlot.classList.add('active');
+        targetSlot.setAttribute('data-player-id', playerId);
+        
+        // Player Name aktualisieren
+        const label = targetSlot.querySelector('.player-label');
+        if (label) {
+            label.textContent = playerName;
+        }
+        
+        // Remote Video Status Overlay
+        addRemoteVideoStatusOverlay(targetSlot, playerId);
+        
+        console.log(`Remote Video angezeigt für ${playerName}`);
+        updateCallStatus();
+    } else {
+        console.warn('Kein freier Video-Slot für', playerName);
+    }
+}
+
+function addRemoteVideoStatusOverlay(playerSlot, playerId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'video-overlay';
+    overlay.innerHTML = `
+        <div class="mic-status active">
+            <span>🎤</span>
+        </div>
+        <div class="cam-status active">
+            <span>📹</span>
+        </div>
+    `;
+    playerSlot.appendChild(overlay);
+}
+
+// WebRTC Offer/Answer Handling
+async function createAndSendOffer(playerId) {
+    const peerConnection = peerConnections[playerId];
+    if (peerConnection) {
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            socket.emit('webrtc-offer', {
+                target: playerId,
+                offer: offer,
+                lobbyCode: currentLobbyCode
+            });
+        } catch (error) {
+            console.error('Fehler beim Erstellen des Offers:', error);
+        }
+    }
+}
+
+async function handleOffer(data) {
+    const { from, offer } = data;
+    
+    if (!peerConnections[from]) {
+        // Peer Connection erstellen falls noch nicht vorhanden
+        const playerName = getPlayerNameById(from);
+        createPeerConnection(from, playerName);
+    }
+    
+    const peerConnection = peerConnections[from];
+    
+    try {
+        await peerConnection.setRemoteDescription(offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        socket.emit('webrtc-answer', {
+            target: from,
+            answer: answer,
+            lobbyCode: currentLobbyCode
+        });
+    } catch (error) {
+        console.error('Fehler bei Offer-Verarbeitung:', error);
+    }
+}
+
+async function handleAnswer(data) {
+    const { from, answer } = data;
+    const peerConnection = peerConnections[from];
+    
+    if (peerConnection) {
+        try {
+            await peerConnection.setRemoteDescription(answer);
+        } catch (error) {
+            console.error('Fehler bei Answer-Verarbeitung:', error);
+        }
+    }
+}
+
+async function handleIceCandidate(data) {
+    const { from, candidate } = data;
+    const peerConnection = peerConnections[from];
+    
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (error) {
+            console.error('Fehler bei ICE-Candidate:', error);
+        }
+    }
+}
+
+function getPlayerNameById(playerId) {
+    if (playerId === currentLobby.admin) {
+        return currentLobby.adminName;
+    }
+    
+    const player = currentLobby.players.find(p => p.id === playerId);
+    return player ? player.name : 'Unbekannt';
+}
+
 function displayLocalVideo() {
     const playerSlot = isAdmin ? 
         document.getElementById('admin-video') : 
         getPlayerVideoSlot();
     
     if (playerSlot) {
+        myVideoSlot = playerSlot;
         const video = playerSlot.querySelector('.player-video');
         const placeholder = playerSlot.querySelector('.video-placeholder');
         
         video.srcObject = localVideoStream;
+        video.muted = true; // Eigenes Video stumm schalten
         video.style.display = 'block';
         placeholder.style.display = 'none';
         
@@ -588,6 +856,9 @@ function displayLocalVideo() {
         
         // Video Status Overlay hinzufügen
         addVideoStatusOverlay(playerSlot);
+        
+        // Markiere als eigenes Video
+        playerSlot.setAttribute('data-player-id', socket.id);
     }
 }
 
@@ -716,10 +987,18 @@ function leaveVideoCall() {
     
     showNotification('📵 Video Call verlassen', 'info');
     
+    // Alle Peer Connections schließen
+    Object.values(peerConnections).forEach(pc => {
+        pc.close();
+    });
+    peerConnections = {};
+    myVideoSlot = null;
+    
     // Anderen mitteilen
     socket.emit('player-left-call', {
         lobbyCode: currentLobbyCode,
-        playerName: isAdmin ? currentLobby.adminName : getPlayerName()
+        playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+        playerId: socket.id
     });
 }
 
@@ -826,6 +1105,10 @@ document.getElementById('home-btn').addEventListener('click', () => {
         leaveVideoCall();
     }
     
+    // Alle Peer Connections schließen
+    Object.values(peerConnections).forEach(pc => pc.close());
+    peerConnections = {};
+    
     // Zum Hauptmenü zurückkehren
     socket.disconnect();
     socket.connect();
@@ -833,6 +1116,7 @@ document.getElementById('home-btn').addEventListener('click', () => {
     currentLobbyCode = null;
     currentLobby = null;
     isAdmin = false;
+    myVideoSlot = null;
     
     showScreen('start');
 });

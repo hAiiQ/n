@@ -9,8 +9,8 @@ let currentQuestionData = null;
 let jitsiApi = null;
 let jitsiRoomName = null;
 
-// Fester Jitsi Meet Link für alle Spieler
-const FIXED_JITSI_URL = 'https://meet.jit.si/jeopardy-game-2024-marvel';
+// Fester Jitsi Meet Call - wird automatisch gespiegelt beim Spielstart
+const FIXED_JITSI_URL = 'https://meet.jit.si/moderated/a6257cb47b52516eb4d31f1f07b7075e7e62573c6ee16c5d10a0edc787630649';
 
 // DOM Elemente
 const screens = {
@@ -143,10 +143,11 @@ socket.on('game-started', (lobby) => {
     currentLobby = lobby;
     initializeGame();
     showScreen('game');
-    showNotification('Spiel gestartet! 🎮 Nutzt Discord für Voice & Video Chat!', 'success');
     
-    // Discord-Integration vorbereiten
-    setupJitsiIntegration();
+    // Automatisch den Jitsi Call spiegeln - keine Buttons, einfach nur anzeigen
+    mirrorJitsiCall();
+    
+    showNotification('Spiel gestartet! 📹 Video Call wird automatisch gespiegelt!', 'success');
 });
 
 socket.on('question-selected', (data) => {
@@ -418,28 +419,16 @@ function processAnswer(correct) {
 // Jitsi Meet Integration Status
 let isJitsiActive = false;
 
-function setupJitsiIntegration() {
-    setupVideoCallControls();
-    initializePermanentJitsi();
-}
-
-function initializePermanentJitsi() {
-    // Kamera-Stream für Lobby (nur Ansicht)
-    const lobbyFrame = document.getElementById('jitsi-frame');
-    if (lobbyFrame) {
-        lobbyFrame.src = FIXED_JITSI_URL;
-    }
-    
-    // Kamera-Stream für Game Screen (nur Ansicht) 
+// Einfache Funktion: Jitsi Call automatisch spiegeln beim Spielstart
+function mirrorJitsiCall() {
+    // Finde das Video-Element im Game Screen
     const cameraStream = document.getElementById('camera-stream');
+    
     if (cameraStream) {
+        // Lade den Call automatisch - keine Buttons, einfach nur anzeigen
         cameraStream.src = FIXED_JITSI_URL;
+        console.log('📹 Jitsi Call wird automatisch gespiegelt:', FIXED_JITSI_URL);
     }
-    
-    // Event Listener für die neuen Join-Buttons
-    setupCameraStreamControls();
-    
-    showNotification('📹 Kamera-Stream ist bereit! Nutzen Sie die Join-Buttons für die Teilnahme.', 'success');
 }
 
 function setupVideoCallControls() {

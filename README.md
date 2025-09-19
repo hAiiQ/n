@@ -73,9 +73,24 @@ jeopardy-game/
 
 ## Browser-Anforderungen
 
-- Moderne Browser mit WebRTC Support
-- Kamera-Berechtigung erforderlich
-- Mikrofon-Berechtigung empfohlen (für Voice Chat)
+- **HTTPS erforderlich** für Webcam/Mikrofon (automatisch auf Render.com)
+- **Moderne Browser:** Chrome 60+, Firefox 55+, Safari 11+, Edge 79+
+- **Kamera-Berechtigung:** "Zulassen" klicken wenn Browser fragt
+- **Mikrofon-Berechtigung:** Für Audio im Video-Call
+- **Mobile:** iOS Safari 14.3+, Android Chrome 60+
+
+## Webcam/Mikrofon Troubleshooting
+
+### Häufige Probleme:
+- **"Zugriff verweigert"** → Auf "Zulassen" klicken, Seite neu laden
+- **"Kamera nicht gefunden"** → USB-Kamera anschließen, andere Apps schließen
+- **"Nicht unterstützt"** → Neueren Browser verwenden (Chrome empfohlen)
+- **HTTP-Warnung** → Render.com nutzt automatisch HTTPS
+
+### Browser-Einstellungen:
+- **Chrome:** Einstellungen → Datenschutz → Website-Einstellungen → Kamera/Mikrofon
+- **Firefox:** about:preferences#privacy → Berechtigungen → Kamera/Mikrofon
+- **Safari:** Safari → Einstellungen → Websites → Kamera/Mikrofon
 
 ## Kategorien und Fragen
 

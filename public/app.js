@@ -380,20 +380,63 @@ function setupVideoCallControls() {
     document.getElementById('toggle-audio').addEventListener('click', toggleAudio);
     document.getElementById('toggle-video').addEventListener('click', toggleVideo);
     document.getElementById('leave-call').addEventListener('click', leaveVideoCall);
+    
+    // Browser-Kompatibilität prüfen
+    checkBrowserSupport();
+}
+
+function checkBrowserSupport() {
+    const callInstructions = document.querySelector('.call-instructions');
+    
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        callInstructions.innerHTML = `
+            <p><strong>⚠️ Browser nicht unterstützt:</strong></p>
+            <p>Ihr Browser unterstützt keine Webcam/Mikrofon-Funktionen. Bitte verwenden Sie Chrome, Firefox, Safari oder Edge für die Video-Call-Funktion. Das Spiel funktioniert trotzdem!</p>
+        `;
+        document.getElementById('join-video-call').disabled = true;
+        return false;
+    }
+    
+    const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    
+    if (!isSecure) {
+        callInstructions.innerHTML = `
+            <p><strong>🔒 HTTPS erforderlich:</strong></p>
+            <p>Webcam/Mikrofon-Zugriff erfordert eine sichere Verbindung (HTTPS). Auf Render.com wird automatisch HTTPS verwendet. Lokal können Sie mit Chrome --allow-running-insecure-content arbeiten.</p>
+        `;
+        return false;
+    }
+    
+    return true;
 }
 
 async function joinVideoCall() {
+    // Check if HTTPS or localhost
+    const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    
+    if (!isSecure) {
+        showHTTPSWarning();
+        return;
+    }
+    
+    // Check if getUserMedia is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showNotification('❌ Webcam/Mikrofon wird von diesem Browser nicht unterstützt!', 'error');
+        return;
+    }
+    
     try {
-        // Kamera und Mikrofon Berechtigung anfordern
+        // Erst nur Audio versuchen, dann Video
         localVideoStream = await navigator.mediaDevices.getUserMedia({ 
             video: { 
-                width: { ideal: 1280 }, 
-                height: { ideal: 720 },
+                width: { ideal: 640, max: 1280 }, 
+                height: { ideal: 480, max: 720 },
                 facingMode: 'user'
             }, 
             audio: { 
                 echoCancellation: true,
-                noiseSuppression: true 
+                noiseSuppression: true,
+                autoGainControl: true
             } 
         });
         
@@ -415,8 +458,110 @@ async function joinVideoCall() {
         
     } catch (error) {
         console.error('Fehler beim Video Call Beitritt:', error);
-        showNotification('❌ Kamera/Mikrofon Zugriff fehlgeschlagen. Überprüft die Berechtigungen!', 'error');
+        handleMediaError(error);
     }
+}
+
+function showHTTPSWarning() {
+    showNotification('🔒 HTTPS erforderlich für Webcam-Zugriff! Render.com nutzt automatisch HTTPS.', 'error');
+    
+    // Alternative Lösung anbieten
+    const httpsUrl = window.location.href.replace('http://', 'https://');
+    if (httpsUrl !== window.location.href) {
+        setTimeout(() => {
+            if (confirm('Möchten Sie zur sicheren HTTPS-Version wechseln?')) {
+                window.location.href = httpsUrl;
+            }
+        }, 2000);
+    }
+}
+
+function handleMediaError(error) {
+    let message = '❌ Webcam/Mikrofon Zugriff fehlgeschlagen: ';
+    
+    switch(error.name) {
+        case 'NotAllowedError':
+        case 'PermissionDeniedError':
+            message += 'Berechtigung verweigert. Klicken Sie auf "Zulassen" wenn der Browser fragt!';
+            break;
+        case 'NotFoundError':
+        case 'DevicesNotFoundError':
+            message += 'Keine Kamera/Mikrofon gefunden. Schließen Sie ein Gerät an!';
+            break;
+        case 'NotReadableError':
+        case 'TrackStartError':
+            message += 'Kamera/Mikrofon wird bereits verwendet. Schließen Sie andere Apps!';
+            break;
+        case 'OverconstrainedError':
+        case 'ConstraintNotSatisfiedError':
+            message += 'Kamera unterstützt nicht die angeforderte Qualität. Versuchen Sie es erneut!';
+            // Fallback mit niedrigerer Qualität
+            tryLowerQualityVideo();
+            return;
+        case 'NotSupportedError':
+            message += 'Webcam/Mikrofon wird von diesem Browser nicht unterstützt!';
+            break;
+        case 'TypeError':
+            message += 'Browser-Problem. Versuchen Sie Chrome, Firefox oder Safari!';
+            break;
+        default:
+            message += `Unbekannter Fehler (${error.name}). Browser neu laden?`;
+    }
+    
+    showNotification(message, 'error');
+    showVideoCallTroubleshooting();
+}
+
+async function tryLowerQualityVideo() {
+    try {
+        // Fallback mit niedrigerer Qualität
+        localVideoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 320, max: 640 }, 
+                height: { ideal: 240, max: 480 },
+                facingMode: 'user'
+            }, 
+            audio: { 
+                echoCancellation: true,
+                noiseSuppression: true
+            } 
+        });
+        
+        displayLocalVideo();
+        isInCall = true;
+        updateCallUI();
+        updateCallStatus();
+        
+        showNotification('📹 Video Call mit reduzierter Qualität gestartet!', 'success');
+        
+        socket.emit('player-joined-call', {
+            lobbyCode: currentLobbyCode,
+            playerName: isAdmin ? currentLobby.adminName : getPlayerName()
+        });
+        
+    } catch (fallbackError) {
+        console.error('Auch Fallback fehlgeschlagen:', fallbackError);
+        showNotification('❌ Auch mit reduzierter Qualität nicht möglich. Spielen Sie ohne Video weiter!', 'error');
+    }
+}
+
+function showVideoCallTroubleshooting() {
+    const troubleshootMsg = `
+🔧 Lösungsvorschläge:
+
+1. 🔒 HTTPS verwenden (automatisch auf Render.com)
+2. 🎯 Auf "Zulassen" klicken wenn Browser fragt
+3. 📹 Kamera/Mikrofon anschließen und testen
+4. 🔄 Andere Apps schließen die Kamera nutzen
+5. 🌐 Chrome, Firefox oder Safari verwenden
+6. 📱 Bei mobilen Geräten: App-Berechtigungen prüfen
+
+Das Spiel funktioniert auch ohne Video! 🎮
+    `;
+    
+    setTimeout(() => {
+        alert(troubleshootMsg);
+    }, 3000);
 }
 
 function displayLocalVideo() {

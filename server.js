@@ -4,8 +4,30 @@ const socketIo = require('socket.io');
 const path = require('path');
 
 const app = express();
+
+// Force HTTPS on Render.com (außer localhost)
+app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https' && process.env.NODE_ENV === 'production') {
+        res.redirect(`https://${req.header('host')}${req.url}`);
+    } else {
+        next();
+    }
+});
+
+// Security Headers für Webcam-Zugriff
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=*, microphone=*');
+    res.setHeader('Feature-Policy', 'camera *; microphone *');
+    next();
+});
+
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 

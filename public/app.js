@@ -198,6 +198,20 @@ socket.on('player-left-call-notification', (data) => {
     updateCallStatus();
 });
 
+// Video Call Socket Events
+socket.on('video-call-created', (data) => {
+    jitsiRoomName = data.roomName;
+    updateVideoCallUI(true, false); // isActive=true, isAdmin=false
+    showNotification(`📹 ${data.adminName} hat einen Video Call erstellt!`, 'success');
+});
+
+socket.on('video-call-stopped', () => {
+    destroyJitsiMeet();
+    jitsiRoomName = null;
+    updateVideoCallUI(false, false); // isActive=false, isAdmin=false
+    showNotification('📵 Video Call wurde vom Admin beendet', 'info');
+});
+
 // Jitsi Meet Integration
 
 function resetVideoSlot(playerSlot) {
@@ -261,6 +275,9 @@ function updateLobbyScreen() {
     // Start Button aktivieren/deaktivieren
     const startBtn = document.getElementById('start-game-btn');
     startBtn.disabled = !isAdmin || currentLobby.players.length === 0;
+    
+    // Video Call UI initialisieren
+    updateVideoCallUI(false, isAdmin);
 }
 
 // Game Initialization
@@ -404,24 +421,75 @@ function setupJitsiIntegration() {
 }
 
 function setupVideoCallControls() {
-    // Jitsi Meet Controls
-    document.getElementById('start-jitsi').addEventListener('click', startJitsiMeeting);
-    document.getElementById('open-jitsi').addEventListener('click', openJitsiRoom);
+    // Admin Controls
+    document.getElementById('create-video-call').addEventListener('click', createVideoCall);
+    document.getElementById('stop-video-call').addEventListener('click', stopVideoCall);
+    
+    // Player Controls  
+    document.getElementById('join-video-call').addEventListener('click', joinVideoCall);
+    
+    // Shared Controls
     document.getElementById('copyRoomLink').addEventListener('click', copyRoomLink);
+    document.getElementById('open-jitsi-tab').addEventListener('click', openJitsiRoom);
+    document.getElementById('open-in-tab').addEventListener('click', openJitsiRoom);
 }
 
 // Jitsi Meet benötigt keine Browser-Kompatibilitätsprüfung - läuft überall!
 
-function startJitsiMeeting() {
+// Admin erstellt Video Call
+function createVideoCall() {
+    if (!isAdmin) {
+        showNotification('❌ Nur der Admin kann Video Calls erstellen!', 'error');
+        return;
+    }
+    
     if (!currentLobbyCode) {
         showNotification('❌ Kein Lobby-Code verfügbar', 'error');
         return;
     }
     
-    initializeJitsiMeet();
-    isJitsiActive = true;
+    // Jitsi Meet Room erstellen
+    jitsiRoomName = `jeopardy-${currentLobbyCode}`;
     
-    showNotification('🎥 Jitsi Meet Video Call gestartet!', 'success');
+    // UI aktualisieren
+    updateVideoCallUI(true, true); // isActive=true, isAdmin=true
+    
+    // Alle Spieler benachrichtigen
+    socket.emit('video-call-created', {
+        lobbyCode: currentLobbyCode,
+        roomName: jitsiRoomName,
+        adminName: currentLobby.adminName
+    });
+    
+    showNotification('🎬 Video Call erstellt! Link wurde an alle Spieler gesendet.', 'success');
+}
+
+// Admin beendet Video Call  
+function stopVideoCall() {
+    if (!isAdmin) return;
+    
+    destroyJitsiMeet();
+    updateVideoCallUI(false, true); // isActive=false, isAdmin=true
+    
+    // Alle Spieler benachrichtigen
+    socket.emit('video-call-stopped', {
+        lobbyCode: currentLobbyCode
+    });
+    
+    showNotification('📵 Video Call beendet', 'info');
+}
+
+// Spieler tritt Video Call bei
+function joinVideoCall() {
+    if (!jitsiRoomName) {
+        showNotification('❌ Kein Video Call aktiv', 'error');
+        return;
+    }
+    
+    // Jitsi Meet einbetten
+    initializeJitsiMeet();
+    
+    showNotification('📱 Video Call beigetreten!', 'success');
 }
 
 // Jitsi Meet ist einfacher - keine komplexe Fehlerbehandlung nötig
@@ -429,20 +497,14 @@ function startJitsiMeeting() {
 // Alte WebRTC-Funktionen entfernt - Jitsi Meet ist viel einfacher!
 // Jitsi Meet Integration
 function initializeJitsiMeet() {
-    if (!currentLobbyCode) return;
-    
-    // Eindeutigen Raum Namen erstellen
-    jitsiRoomName = `jeopardy-${currentLobbyCode}`;
+    if (!jitsiRoomName) return;
     
     // Jitsi Meet Container zeigen
     const jitsiContainer = document.getElementById('jitsi-container');
-    const roomInfo = document.getElementById('room-info');
-    const roomLink = document.getElementById('room-link');
+    const embedContainer = document.getElementById('jitsi-embed-container');
     
-    // Raum Link anzeigen
-    const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}`;
-    roomLink.textContent = jitsiUrl;
-    roomInfo.style.display = 'block';
+    // Embed Container anzeigen
+    embedContainer.style.display = 'block';
     
     // Jitsi Meet API konfigurieren
     const domain = 'meet.jit.si';
@@ -464,10 +526,9 @@ function initializeJitsiMeet() {
             TOOLBAR_BUTTONS: [
                 'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
                 'fodeviceselection', 'hangup', 'profile', 'settings', 'videoquality',
-                'filmstrip', 'stats', 'shortcuts', 'tileview', 'videobackgroundblur',
-                'download', 'help'
+                'filmstrip', 'stats', 'shortcuts', 'tileview', 'videobackgroundblur'
             ],
-            SETTINGS_SECTIONS: ['devices', 'language', 'moderator', 'profile', 'calendar'],
+            SETTINGS_SECTIONS: ['devices', 'language', 'moderator', 'profile'],
             SHOW_JITSI_WATERMARK: false,
             SHOW_WATERMARK_FOR_GUESTS: false
         }
@@ -475,16 +536,19 @@ function initializeJitsiMeet() {
     
     // Jitsi Meet API laden und initialisieren
     if (window.JitsiMeetExternalAPI) {
+        // Vorherige Instanz schließen
+        if (jitsiApi) {
+            jitsiApi.dispose();
+        }
+        
         jitsiApi = new JitsiMeetExternalAPI(domain, options);
         
         jitsiApi.addEventListener('videoConferenceJoined', () => {
             showNotification('✅ Video Call beigetreten', 'success');
-            updateJitsiStatus(true);
         });
         
         jitsiApi.addEventListener('videoConferenceLeft', () => {
             showNotification('📵 Video Call verlassen', 'info');
-            updateJitsiStatus(false);
         });
         
         jitsiApi.addEventListener('participantJoined', (participant) => {
@@ -492,7 +556,7 @@ function initializeJitsiMeet() {
         });
         
         jitsiApi.addEventListener('participantLeft', (participant) => {
-            showNotification(`👋 ${participant.displayName} hat verlassen`, 'info');
+            showNotification(`👋 ${participant.displayName} hat verlassen`, 'info');  
         });
     } else {
         console.error('Jitsi Meet API nicht geladen');
@@ -500,16 +564,55 @@ function initializeJitsiMeet() {
     }
 }
 
-function updateJitsiStatus(isJoined) {
-    const statusElement = document.getElementById('call-participants');
-    const indicator = document.querySelector('.status-indicator');
+function updateVideoCallUI(isActive, isAdminUser) {
+    const adminControls = document.getElementById('admin-jitsi-controls');
+    const playerControls = document.getElementById('player-jitsi-controls');
+    const videoStatus = document.getElementById('video-call-status');
+    const roomInfo = document.getElementById('room-info');
+    const statusText = document.getElementById('call-status-text');
+    const statusIndicator = document.querySelector('.status-indicator');
+    const roomLink = document.getElementById('room-link');
     
-    if (isJoined) {
-        statusElement.textContent = 'Video Call aktiv';
-        indicator.textContent = '🟢';
+    // Admin UI
+    if (isAdminUser) {
+        adminControls.style.display = 'block';
+        playerControls.style.display = 'none';
+        
+        if (isActive) {
+            document.getElementById('create-video-call').style.display = 'none';
+            document.getElementById('stop-video-call').style.display = 'inline-flex';
+        } else {
+            document.getElementById('create-video-call').style.display = 'inline-flex';
+            document.getElementById('stop-video-call').style.display = 'none';
+        }
     } else {
-        statusElement.textContent = 'Kein Video Call';
-        indicator.textContent = '🔴';
+        // Spieler UI
+        adminControls.style.display = 'none';
+        
+        if (isActive) {
+            playerControls.style.display = 'block';
+            roomInfo.style.display = 'block';
+        } else {
+            playerControls.style.display = 'none';
+            roomInfo.style.display = 'none';
+        }
+    }
+    
+    // Status aktualisieren
+    videoStatus.style.display = 'block';
+    if (isActive) {
+        statusText.textContent = 'Video Call aktiv';
+        statusIndicator.textContent = '🟢';
+        
+        // Room Link anzeigen
+        if (jitsiRoomName) {
+            const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}`;
+            roomLink.textContent = jitsiUrl;
+        }
+    } else {
+        statusText.textContent = 'Kein Video Call aktiv';
+        statusIndicator.textContent = '🔴';
+        roomInfo.style.display = 'none';
     }
 }
 
@@ -554,16 +657,16 @@ function destroyJitsiMeet() {
         jitsiApi = null;
     }
     
-    // Container leeren
+    // Container leeren und verstecken
     const jitsiContainer = document.getElementById('jitsi-container');
+    const embedContainer = document.getElementById('jitsi-embed-container');
+    
     if (jitsiContainer) {
         jitsiContainer.innerHTML = '';
     }
     
-    // Room Info verstecken
-    const roomInfo = document.getElementById('room-info');
-    if (roomInfo) {
-        roomInfo.style.display = 'none';
+    if (embedContainer) {
+        embedContainer.style.display = 'none';
     }
 }
 

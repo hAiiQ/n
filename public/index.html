@@ -159,40 +159,71 @@
                     </div>
                     
                     <div class="jitsi-container">
-                        <div class="jitsi-controls">
-                            <button id="open-jitsi-meet" class="btn btn-success">
-                                <i class="icon">🎥</i>
-                                Jitsi Meet öffnen
+                        <!-- Admin Controls -->
+                        <div id="admin-jitsi-controls" class="jitsi-controls" style="display: none;">
+                            <button id="create-video-call" class="btn btn-success">
+                                <i class="icon">�</i>
+                                Video Call erstellen
                             </button>
-                            <button id="embed-jitsi-meet" class="btn btn-primary">
-                                <i class="icon">📱</i>
-                                Hier einbetten
-                            </button>
-                            <button id="close-jitsi-embed" class="btn btn-danger" style="display: none;">
+                            <button id="stop-video-call" class="btn btn-danger" style="display: none;">
                                 <i class="icon">❌</i>
-                                Video schließen
+                                Video Call beenden
                             </button>
                         </div>
                         
-                        <!-- Jitsi Meet Embed Container -->
-                        <div id="jitsi-embed-container" class="jitsi-embed-container hidden">
-                            <div class="embed-header">
-                                <span>📹 Live Video Call - Alle Spieler</span>
-                                <button id="minimize-jitsi" class="btn-minimize">📐</button>
+                        <!-- Spieler Controls -->
+                        <div id="player-jitsi-controls" class="jitsi-controls" style="display: none;">
+                            <button id="join-video-call" class="btn btn-primary">
+                                <i class="icon">📱</i>
+                                Video Call beitreten
+                            </button>
+                        </div>
+                        
+                        <!-- Video Call Status -->
+                        <div id="video-call-status" class="video-call-status" style="display: none;">
+                            <div class="status-header">
+                                <span class="status-indicator">🔴</span>
+                                <span id="call-status-text">Kein Video Call aktiv</span>
                             </div>
-                            <div id="jitsi-meet-div" class="jitsi-meet-frame">
-                                <!-- Jitsi Meet wird hier eingebettet -->
+                        </div>
+                        
+                        <!-- Jitsi Meet Embed Container -->
+                        <div id="jitsi-embed-container" class="jitsi-embed-container" style="display: none;">
+                            <div class="embed-header">
+                                <span>📹 Live Video Call</span>
+                                <button id="open-in-tab" class="btn btn-ghost btn-sm">
+                                    <i class="icon">�</i>
+                                    In Tab öffnen
+                                </button>
+                            </div>
+                            <div id="jitsi-container"></div>
+                        </div>
+                        
+                        <!-- Room Info für Spieler -->
+                        <div id="room-info" class="room-info" style="display: none;">
+                            <h3>📺 Video Call Raum</h3>
+                            <p>Der Admin hat einen Video Call erstellt.</p>
+                            <div class="room-link" id="room-link"></div>
+                            <div class="room-actions">
+                                <button id="copyRoomLink" class="btn btn-ghost">
+                                    <i class="icon">📋</i>
+                                    Link kopieren
+                                </button>
+                                <button id="open-jitsi-tab" class="btn btn-primary">
+                                    <i class="icon">🔗</i>
+                                    In neuem Tab öffnen
+                                </button>
                             </div>
                         </div>
                         
                         <div class="jitsi-instructions">
-                            <p><strong>🎯 Automatischer Jitsi Meet Raum:</strong></p>
+                            <p><strong>🎯 Video Call System:</strong></p>
                             <ul>
-                                <li>🔗 <strong>Automatischer Raum</strong> für diese Lobby erstellt</li>
-                                <li>🎥 <strong>"Jitsi Meet öffnen"</strong> → Öffnet in neuem Tab</li>
-                                <li>📱 <strong>"Hier einbetten"</strong> → Video direkt auf der Seite</li>
-                                <li>🎮 <strong>Spiel läuft weiter</strong> während Video-Call aktiv ist</li>
-                                <li>🔊 <strong>Voice + Video</strong> - Funktioniert auf allen Geräten!</li>
+                                <li>👨‍� <strong>Admin erstellt</strong> den Video Call Raum</li>
+                                <li>👥 <strong>Spieler treten bei</strong> über den geteilten Link</li>
+                                <li>🎥 <strong>Funktioniert auf allen Geräten</strong> - Chrome, Firefox, Safari, Mobile</li>
+                                <li>🎮 <strong>Spiel läuft parallel</strong> zum Video Call</li>
+                                <li>🔊 <strong>Audio + Video</strong> für beste Kommunikation!</li>
                             </ul>
                         </div>
                         

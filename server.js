@@ -185,6 +185,19 @@ io.on('connection', (socket) => {
         console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen`);
     });
     
+    // Video Call Management (Admin-only)
+    socket.on('video-call-created', (data) => {
+        const { lobbyCode, roomName, adminName } = data;
+        socket.to(lobbyCode).emit('video-call-created', { roomName, adminName });
+        console.log(`Admin ${adminName} hat Video Call ${roomName} für Lobby ${lobbyCode} erstellt`);
+    });
+    
+    socket.on('video-call-stopped', (data) => {
+        const { lobbyCode } = data;
+        socket.to(lobbyCode).emit('video-call-stopped');
+        console.log(`Video Call für Lobby ${lobbyCode} wurde beendet`);
+    });
+    
     // WebRTC Signaling
     socket.on('webrtc-offer', (data) => {
         const { target, offer, lobbyCode } = data;

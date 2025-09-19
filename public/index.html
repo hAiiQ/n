@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Superhelden Jeopardy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <div class="hero-section">
+                <h1 class="main-title">
+                    <span class="hero-text">SUPERHELDEN</span>
+                    <span class="jeopardy-text">JEOPARDY</span>
+                </h1>
+                <p class="subtitle">Das ultimative Superhelden-Quiz für 4 Spieler</p>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="create-lobby-btn" class="btn btn-primary">
+                    <i class="icon">🎮</i>
+                    Lobby Erstellen
+                </button>
+                <button id="join-lobby-btn" class="btn btn-secondary">
+                    <i class="icon">🔗</i>
+                    Lobby Beitreten
+                </button>
+            </div>
+        </div>
+
+        <!-- Create Lobby Screen -->
+        <div id="create-lobby-screen" class="screen">
+            <div class="form-container">
+                <h2>Neue Lobby erstellen</h2>
+                <form id="create-lobby-form">
+                    <div class="input-group">
+                        <label for="admin-name">Dein Name (Admin)</label>
+                        <input type="text" id="admin-name" placeholder="Gib deinen Namen ein..." required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Lobby Erstellen</button>
+                        <button type="button" id="back-to-start" class="btn btn-ghost">Zurück</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Join Lobby Screen -->
+        <div id="join-lobby-screen" class="screen">
+            <div class="form-container">
+                <h2>Lobby beitreten</h2>
+                <form id="join-lobby-form">
+                    <div class="input-group">
+                        <label for="player-name">Dein Name</label>
+                        <input type="text" id="player-name" placeholder="Gib deinen Namen ein..." required>
+                    </div>
+                    <div class="input-group">
+                        <label for="lobby-code">Lobby-Code</label>
+                        <input type="text" id="lobby-code" placeholder="6-stelliger Code..." required maxlength="6">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Beitreten</button>
+                        <button type="button" id="back-to-start-join" class="btn btn-ghost">Zurück</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <div class="lobby-container">
+                <div class="lobby-header">
+                    <h2>Lobby: <span id="current-lobby-code"></span></h2>
+                    <div class="admin-info">
+                        Admin: <span id="admin-display-name"></span>
+                    </div>
+                </div>
+                
+                <div class="players-section">
+                    <h3>Spieler (<span id="player-count">0</span>/4)</h3>
+                    <div id="players-list" class="players-grid">
+                        <!-- Spieler werden hier eingefügt -->
+                    </div>
+                </div>
+                
+                <div class="lobby-actions">
+                    <button id="start-game-btn" class="btn btn-primary" disabled>
+                        Spiel Starten
+                    </button>
+                    <button id="leave-lobby-btn" class="btn btn-danger">
+                        Lobby Verlassen
+                    </button>
+                </div>
+                
+                <div class="game-info">
+                    <h4>Spielregeln:</h4>
+                    <ul>
+                        <li>5 Kategorien mit je 5 Fragen</li>
+                        <li>2 Runden: 100-500 Punkte → 200-1000 Punkte</li>
+                        <li>Falsche Antwort = -50% der Punkte</li>
+                        <li>Voice-Chat über Discord empfohlen</li>
+                        <li>Webcams werden automatisch aktiviert</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-container">
+                <!-- Header mit Rundeninfo und Scores -->
+                <div class="game-header">
+                    <div class="round-info">
+                        <h2>Runde <span id="current-round">1</span></h2>
+                        <div class="current-player">
+                            Am Zug: <span id="active-player-name">Spieler 1</span>
+                        </div>
+                    </div>
+                    <div class="scores-display">
+                        <div id="scores-list">
+                            <!-- Scores werden hier eingefügt -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Spielbrett -->
+                <div class="game-board" id="game-board">
+                    <!-- Wird dynamisch generiert -->
+                </div>
+
+                <!-- Fragebereich -->
+                <div id="question-area" class="question-area hidden">
+                    <div class="question-container">
+                        <div class="question-header">
+                            <span id="question-category"></span> - <span id="question-points"></span> Punkte
+                        </div>
+                        <div class="question-text" id="question-text">
+                            <!-- Frage wird hier angezeigt -->
+                        </div>
+                        <div class="question-actions" id="admin-controls">
+                            <button id="correct-answer-btn" class="btn btn-success">Richtig</button>
+                            <button id="wrong-answer-btn" class="btn btn-danger">Falsch</button>
+                            <button id="close-question-btn" class="btn btn-ghost">Schließen</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Call Integration -->
+                <div class="video-call-section">
+                    <div class="call-header">
+                        <h3>📹 Spieler Video Call</h3>
+                        <div class="call-status" id="call-status">
+                            <span class="status-indicator">🔴</span>
+                            <span id="call-participants">0/5 Teilnehmer</span>
+                        </div>
+                    </div>
+                    
+                    <div class="call-container" id="call-container">
+                        <!-- Automatischer privater Call für alle 5 Spieler -->
+                        <div class="call-grid" id="call-grid">
+                            <div class="player-video-slot" id="admin-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">👑</div>
+                                    <div class="player-label">Admin</div>
+                                    <div class="video-status">Warte auf Verbindung...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player1-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 1</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player2-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 2</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player3-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 3</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                            
+                            <div class="player-video-slot" id="player4-video">
+                                <div class="video-placeholder">
+                                    <div class="avatar">🎮</div>
+                                    <div class="player-label">Spieler 4</div>
+                                    <div class="video-status">Wartet auf Beitritt...</div>
+                                </div>
+                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                            </div>
+                        </div>
+                        
+                        <div class="call-controls">
+                            <button id="join-video-call" class="btn btn-success">
+                                <i class="icon">📹</i>
+                                Video Call beitreten
+                            </button>
+                            <button id="toggle-audio" class="btn btn-ghost" disabled>
+                                <i class="icon">🎤</i>
+                                Mikro
+                            </button>
+                            <button id="toggle-video" class="btn btn-ghost" disabled>
+                                <i class="icon">📹</i>
+                                Kamera
+                            </button>
+                            <button id="leave-call" class="btn btn-danger" style="display: none;">
+                                <i class="icon">📵</i>
+                                Call verlassen
+                            </button>
+                        </div>
+                        
+                        <div class="call-instructions">
+                            <p><strong>🎯 Automatischer Privat-Call:</strong></p>
+                            <p>Alle 5 Spieler (Admin + 4 Spieler) werden automatisch in einem privaten Video-Call verbunden. Klickt einfach auf "Video Call beitreten" um eure Kamera und Mikro zu aktivieren!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game End Screen -->
+        <div id="game-end-screen" class="screen">
+            <div class="end-game-container">
+                <h2 class="game-over-title">🏆 Spiel Beendet! 🏆</h2>
+                <div id="final-scores" class="final-scores">
+                    <!-- Endergebnisse werden hier angezeigt -->
+                </div>
+                <div class="end-game-actions">
+                    <button id="new-game-btn" class="btn btn-primary">Neues Spiel</button>
+                    <button id="home-btn" class="btn btn-secondary">Hauptmenü</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification System -->
+    <div id="notifications" class="notifications">
+        <!-- Benachrichtigungen werden hier eingefügt -->
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

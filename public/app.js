@@ -9,6 +9,9 @@ let currentQuestionData = null;
 let jitsiApi = null;
 let jitsiRoomName = null;
 
+// Fester Jitsi Meet Link
+const FIXED_JITSI_URL = 'https://meet.jit.si/moderated/a6257cb47b52516eb4d31f1f07b7075e7e62573c6ee16c5d10a0edc787630649#jwt=%22eyJhbGciOiJSUzI1NiIsImtpZCI6IjUwMDZlMjc5MTVhMTcwYWIyNmIxZWUzYjgxZDExNjU0MmYxMjRmMjAiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoiTWljaGFlbCBTY2hvb2tvbyIsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NJZzYxZXYtSzRZamdULTZkS2dDb3hXRVU5OHg2QXBLTGZIU3VUVEstTXNfUW5Kc1E9czk2LWMiLCJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbWVldC1qaXQtc2ktNjZjYmQiLCJhdWQiOiJtZWV0LWppdC1zaS02NmNiZCIsImF1dGhfdGltZSI6MTc1ODA3MzE2NSwidXNlcl9pZCI6IkFyWGhhYU9kUDlQVHRFeXdjY3dzUWdXWHBEcDEiLCJzdWIiOiJBclhoYWFPZFA5UFR0RXl3Y2N3c1FnV1hwRHAxIiwiaWF0IjoxNzU4MzIwNzgxLCJleHAiOjE3NTgzMjQzODEsImVtYWlsIjoiaHF4QGxpdmUuZGUiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJnb29nbGUuY29tIjpbIjEwMjM3NTY1MTA0NjQ5ODg1MDcxMSJdLCJlbWFpbCI6WyJocXhAbGl2ZS5kZSJdfSwic2lnbl9pbl9wcm92aWRlciI6Imdvb2dsZS5jb20ifX0.ffVKAELiY0cVQN72pQSROOtm6nvK2og6gF1gbOoZIAPbCUahB1F4FuoEjqELbSyqtXlC-nAMIB5dkbFiLECInuGk5aj0cJVizl8KMB_Dog7XFqlIuKrko2L5gu9B6swGOczI-ZlFYyViyZFGm6YWpGu9gb7TUXPlx_F0wbewH8HAn439FRTIAQih5EYqyCrsFo4opGwXfKQ_Nx4F-KBrAtKj6md7ZqumHjE9Y1eHEjFCAKdUf_qvdUEZdNsKUCUTg76c09ddcOMnJhxBUmsqv-WKIABizyBk6cGpaGBOlpId0CV8SfNaGPA1Rm1_kEpizoKaEx1k9JciP4Pcj0Azcw%22';
+
 // DOM Elemente
 const screens = {
     start: document.getElementById('start-screen'),
@@ -417,21 +420,49 @@ let isJitsiActive = false;
 
 function setupJitsiIntegration() {
     setupVideoCallControls();
-    updateJitsiStatus(false);
+    initializePermanentJitsi();
+}
+
+function initializePermanentJitsi() {
+    // Festen Jitsi Meet Link in beide iframes laden
+    const lobbyFrame = document.getElementById('jitsi-frame');
+    const gameFrame = document.getElementById('game-jitsi-frame');
+    
+    if (lobbyFrame) {
+        lobbyFrame.src = FIXED_JITSI_URL;
+    }
+    
+    if (gameFrame) {
+        gameFrame.src = FIXED_JITSI_URL;
+    }
+    
+    showNotification('📹 Video Chat ist bereit! Klicken Sie auf "Beitreten" im Video-Fenster.', 'success');
 }
 
 function setupVideoCallControls() {
-    // Admin Controls
-    document.getElementById('create-video-call').addEventListener('click', createVideoCall);
-    document.getElementById('stop-video-call').addEventListener('click', stopVideoCall);
+    // Legacy Controls (werden nicht mehr verwendet, da dauerhaft aktiv)
+    const createBtn = document.getElementById('create-video-call');
+    const stopBtn = document.getElementById('stop-video-call');
+    const joinBtn = document.getElementById('join-video-call');
     
-    // Player Controls  
-    document.getElementById('join-video-call').addEventListener('click', joinVideoCall);
+    if (createBtn) createBtn.addEventListener('click', createVideoCall);
+    if (stopBtn) stopBtn.addEventListener('click', stopVideoCall);
+    if (joinBtn) joinBtn.addEventListener('click', joinVideoCall);
     
     // Shared Controls
-    document.getElementById('copyRoomLink').addEventListener('click', copyRoomLink);
-    document.getElementById('open-jitsi-tab').addEventListener('click', openJitsiRoom);
-    document.getElementById('open-in-tab').addEventListener('click', openJitsiRoom);
+    const copyBtn = document.getElementById('copyRoomLink');
+    const openBtn = document.getElementById('open-jitsi-tab');
+    const tabBtn = document.getElementById('open-in-tab');
+    
+    if (copyBtn) copyBtn.addEventListener('click', copyRoomLink);
+    if (openBtn) openBtn.addEventListener('click', openJitsiRoom);
+    if (tabBtn) tabBtn.addEventListener('click', openJitsiRoom);
+    
+    // Video Toggle im Spiel
+    const toggleBtn = document.getElementById('toggle-game-video');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleGameVideo);
+    }
 }
 
 // Jitsi Meet benötigt keine Browser-Kompatibilitätsprüfung - läuft überall!
@@ -617,28 +648,37 @@ function updateVideoCallUI(isActive, isAdminUser) {
 }
 
 function copyRoomLink() {
-    const roomLink = document.getElementById('room-link');
-    if (roomLink) {
-        navigator.clipboard.writeText(roomLink.textContent).then(() => {
-            showNotification('📋 Raum-Link kopiert!', 'success');
-        }).catch(() => {
-            // Fallback für ältere Browser
-            const textArea = document.createElement('textarea');
-            textArea.value = roomLink.textContent;
-            document.body.appendChild(textArea);
-            textArea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textArea);
-            showNotification('📋 Raum-Link kopiert!', 'success');
-        });
-    }
+    navigator.clipboard.writeText(FIXED_JITSI_URL).then(() => {
+        showNotification('📋 Video Chat Link kopiert!', 'success');
+    }).catch(() => {
+        // Fallback für ältere Browser
+        const textArea = document.createElement('textarea');
+        textArea.value = FIXED_JITSI_URL;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showNotification('📋 Video Chat Link kopiert!', 'success');
+    });
 }
 
 function openJitsiRoom() {
-    if (jitsiRoomName) {
-        const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}`;
-        window.open(jitsiUrl, '_blank');
-        showNotification('🔗 Jitsi Meet Raum in neuem Tab geöffnet', 'info');
+    window.open(FIXED_JITSI_URL, '_blank');
+    showNotification('🔗 Jitsi Meet Raum in neuem Tab geöffnet', 'info');
+}
+
+function toggleGameVideo() {
+    const videoContainer = document.getElementById('game-jitsi-container');
+    const toggleBtn = document.getElementById('toggle-game-video');
+    
+    if (videoContainer.style.display === 'none') {
+        videoContainer.style.display = 'block';
+        toggleBtn.textContent = '📹 Video ausblenden';
+        showNotification('� Video Chat eingeblendet', 'info');
+    } else {
+        videoContainer.style.display = 'none';
+        toggleBtn.textContent = '📹 Video einblenden';
+        showNotification('📹 Video Chat ausgeblendet', 'info');
     }
 }
 

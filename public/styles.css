@@ -1065,3 +1065,66 @@ body::before {
     padding: 5px 10px;
     font-size: 0.8em;
 }
+
+/* Permanent Jitsi Meet Video */
+.permanent-jitsi {
+    background: rgba(14, 18, 41, 0.9);
+    border-radius: 15px;
+    padding: 20px;
+    margin: 20px 0;
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 20px rgba(238, 188, 44, 0.3);
+}
+
+.video-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.video-header h4 {
+    color: var(--primary-color);
+    margin: 0;
+    font-size: 1.3em;
+}
+
+.video-status {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.video-footer {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.video-footer p {
+    margin: 0;
+    color: var(--text-light);
+    font-size: 0.9em;
+}
+
+/* Game Video Section */
+.game-video-section {
+    margin-top: 20px;
+    background: rgba(14, 18, 41, 0.7);
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
+}
+
+.video-toggle {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.game-jitsi {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--primary-color);
+}

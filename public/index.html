@@ -148,87 +148,60 @@
                     </div>
                 </div>
 
-                <!-- Video Call Integration -->
-                <div class="video-call-section">
-                    <div class="call-header">
-                        <h3>📹 Spieler Video Call</h3>
-                        <div class="call-status" id="call-status">
-                            <span class="status-indicator">🔴</span>
-                            <span id="call-participants">0/5 Teilnehmer</span>
+                <!-- Jitsi Meet Integration -->
+                <div class="jitsi-section">
+                    <div class="jitsi-header">
+                        <h3>📹 Video Conference</h3>
+                        <div class="jitsi-info">
+                            <span class="room-indicator">🎮</span>
+                            <span id="jitsi-room-name">Raum: Wird erstellt...</span>
                         </div>
                     </div>
                     
-                    <div class="call-container" id="call-container">
-                        <!-- Automatischer privater Call für alle 5 Spieler -->
-                        <div class="call-grid" id="call-grid">
-                            <div class="player-video-slot" id="admin-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">👑</div>
-                                    <div class="player-label">Admin</div>
-                                    <div class="video-status">Warte auf Verbindung...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player1-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 1</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player2-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 2</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player3-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 3</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player4-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 4</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                        </div>
-                        
-                        <div class="call-controls">
-                            <button id="join-video-call" class="btn btn-success">
-                                <i class="icon">📹</i>
-                                Video Call beitreten
+                    <div class="jitsi-container">
+                        <div class="jitsi-controls">
+                            <button id="open-jitsi-meet" class="btn btn-success">
+                                <i class="icon">🎥</i>
+                                Jitsi Meet öffnen
                             </button>
-                            <button id="toggle-audio" class="btn btn-ghost" disabled>
-                                <i class="icon">🎤</i>
-                                Mikro
+                            <button id="embed-jitsi-meet" class="btn btn-primary">
+                                <i class="icon">📱</i>
+                                Hier einbetten
                             </button>
-                            <button id="toggle-video" class="btn btn-ghost" disabled>
-                                <i class="icon">📹</i>
-                                Kamera
-                            </button>
-                            <button id="leave-call" class="btn btn-danger" style="display: none;">
-                                <i class="icon">📵</i>
-                                Call verlassen
+                            <button id="close-jitsi-embed" class="btn btn-danger" style="display: none;">
+                                <i class="icon">❌</i>
+                                Video schließen
                             </button>
                         </div>
                         
-                        <div class="call-instructions">
-                            <p><strong>🎯 Automatischer Privat-Call:</strong></p>
-                            <p>Alle 5 Spieler (Admin + 4 Spieler) werden automatisch in einem privaten Video-Call verbunden. Klickt einfach auf "Video Call beitreten" um eure Kamera und Mikro zu aktivieren!</p>
+                        <!-- Jitsi Meet Embed Container -->
+                        <div id="jitsi-embed-container" class="jitsi-embed-container hidden">
+                            <div class="embed-header">
+                                <span>📹 Live Video Call - Alle Spieler</span>
+                                <button id="minimize-jitsi" class="btn-minimize">📐</button>
+                            </div>
+                            <div id="jitsi-meet-div" class="jitsi-meet-frame">
+                                <!-- Jitsi Meet wird hier eingebettet -->
+                            </div>
+                        </div>
+                        
+                        <div class="jitsi-instructions">
+                            <p><strong>🎯 Automatischer Jitsi Meet Raum:</strong></p>
+                            <ul>
+                                <li>🔗 <strong>Automatischer Raum</strong> für diese Lobby erstellt</li>
+                                <li>🎥 <strong>"Jitsi Meet öffnen"</strong> → Öffnet in neuem Tab</li>
+                                <li>📱 <strong>"Hier einbetten"</strong> → Video direkt auf der Seite</li>
+                                <li>🎮 <strong>Spiel läuft weiter</strong> während Video-Call aktiv ist</li>
+                                <li>🔊 <strong>Voice + Video</strong> - Funktioniert auf allen Geräten!</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="jitsi-room-link">
+                            <p><strong>� Raum-Link teilen:</strong></p>
+                            <div class="link-container">
+                                <input type="text" id="jitsi-room-link" readonly placeholder="Jitsi Meet Link wird erstellt...">
+                                <button id="copy-jitsi-link" class="btn btn-ghost">📋 Kopieren</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -255,7 +228,13 @@
         <!-- Benachrichtigungen werden hier eingefügt -->
     </div>
 
+    <!-- Jitsi Meet External API -->
+    <script src="https://meet.jit.si/external_api.js"></script>
+    
+    <!-- Socket.io Client -->
     <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- Main App Script -->
     <script src="app.js"></script>
 </body>
 </html>

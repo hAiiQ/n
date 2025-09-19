@@ -566,8 +566,8 @@ body::before {
     flex-wrap: wrap;
 }
 
-/* Video Call Integration */
-.video-call-section {
+/* Jitsi Meet Integration */
+.jitsi-section {
     background: rgba(26, 31, 58, 0.8);
     border-radius: 15px;
     padding: 20px;
@@ -971,4 +971,53 @@ body::before {
         padding: 10px;
         font-size: 0.9rem;
     }
+}
+
+/* Jitsi Meet Container Styles */
+.jitsi-container {
+    width: 100%;
+    height: 400px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 20px rgba(238, 188, 44, 0.3);
+    margin: 15px 0;
+}
+
+.jitsi-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+.room-info {
+    background: rgba(14, 18, 41, 0.9);
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    border: 1px solid var(--border-color);
+}
+
+.room-info h3 {
+    color: var(--primary-color);
+    margin: 0 0 10px 0;
+    font-size: 1.2em;
+}
+
+.room-link {
+    background: rgba(26, 31, 58, 0.8);
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+    font-family: monospace;
+    font-size: 0.9em;
+    color: var(--text-color);
+    word-break: break-all;
+}
+
+#copyRoomLink {
+    margin-top: 10px;
 }

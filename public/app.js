@@ -187,19 +187,23 @@ socket.on('error', (message) => {
 
 // Video Call Events
 socket.on('player-joined-call-notification', (data) => {
+    console.log('🔔 Spieler ist Video Call beigetreten:', data);
     showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
     
     // Wenn ich bereits im Call bin, Verbindung zu dem neuen Spieler aufbauen
     if (isInCall && data.playerId !== socket.id) {
-        console.log(`🔗 Baue Verbindung zu neuem Spieler auf: ${data.playerName}`);
+        console.log(`🔗 Baue Verbindung zu neuem Spieler auf: ${data.playerName} (${data.playerId})`);
         
         // Peer Connection erstellen
         createPeerConnection(data.playerId, data.playerName);
         
         // Als "Initiator" ein Offer senden (mit Delay für stabilere Verbindung)
         setTimeout(() => {
+            console.log(`🎯 Initiiere Verbindung zu: ${data.playerName}`);
             initiateConnection(data.playerId);
-        }, 1500);
+        }, 2000);
+    } else {
+        console.log(`ℹ️ Nicht im Call oder eigener Beitritt - keine Aktion erforderlich`);
     }
     
     updateCallStatus();
@@ -540,7 +544,7 @@ async function joinVideoCall() {
         setupPeerConnections();
         
         // Allen anderen Spielern mitteilen, dass ich beigetreten bin
-        socket.emit('video-call-joined', {
+        socket.emit('player-joined-call', {
             lobbyCode: currentLobbyCode,
             playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
             playerId: socket.id
@@ -620,6 +624,10 @@ async function tryLowerQualityVideo() {
         });
         
         displayLocalVideo();
+        
+        // WebRTC Peer Connections zu anderen Spielern aufbauen
+        setupPeerConnections();
+        
         isInCall = true;
         updateCallUI();
         updateCallStatus();
@@ -724,9 +732,15 @@ function createPeerConnection(playerId, playerName) {
     
     // Remote Stream Handler
     peerConnection.ontrack = (event) => {
-        console.log(`📺 Remote stream empfangen von ${playerName}`);
+        console.log(`📺 ONTRACK EVENT! Remote stream empfangen von ${playerName}`, event);
+        console.log(`📺 Event Details - Streams:`, event.streams.length, event.streams);
         const [remoteStream] = event.streams;
-        displayRemoteVideo(remoteStream, playerId, playerName);
+        if (remoteStream) {
+            console.log(`📺 Stream Tracks:`, remoteStream.getTracks().map(t => `${t.kind}: ${t.enabled}`));
+            displayRemoteVideo(remoteStream, playerId, playerName);
+        } else {
+            console.error('❌ Kein Remote Stream im ontrack Event!');
+        }
     };
     
     // ICE Candidate Handler
@@ -869,54 +883,69 @@ async function createAndSendOffer(playerId) {
 }
 
 async function handleOffer(data) {
+    console.log('📨 Offer empfangen:', data);
     const { from, offer } = data;
     
     if (!peerConnections[from]) {
         // Peer Connection erstellen falls noch nicht vorhanden
         const playerName = getPlayerNameById(from);
+        console.log(`🔗 Erstelle Peer Connection für eingehenden Offer von: ${playerName}`);
         createPeerConnection(from, playerName);
     }
     
     const peerConnection = peerConnections[from];
     
     try {
+        console.log('📝 Setze Remote Description...');
         await peerConnection.setRemoteDescription(offer);
+        
+        console.log('💬 Erstelle Answer...');
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         
+        console.log('📤 Sende Answer zurück an:', from);
         socket.emit('webrtc-answer', {
             target: from,
             answer: answer,
             lobbyCode: currentLobbyCode
         });
     } catch (error) {
-        console.error('Fehler bei Offer-Verarbeitung:', error);
+        console.error('❌ Fehler bei Offer-Verarbeitung:', error);
     }
 }
 
 async function handleAnswer(data) {
+    console.log('📨 Answer empfangen:', data);
     const { from, answer } = data;
     const peerConnection = peerConnections[from];
     
     if (peerConnection) {
         try {
+            console.log('📝 Setze Remote Description (Answer)...');
             await peerConnection.setRemoteDescription(answer);
+            console.log('✅ Answer verarbeitet für:', from);
         } catch (error) {
-            console.error('Fehler bei Answer-Verarbeitung:', error);
+            console.error('❌ Fehler bei Answer-Verarbeitung:', error);
         }
+    } else {
+        console.error('❌ Keine Peer Connection gefunden für Answer von:', from);
     }
 }
 
 async function handleIceCandidate(data) {
+    console.log('🧊 ICE Candidate empfangen:', data);
     const { from, candidate } = data;
     const peerConnection = peerConnections[from];
     
     if (peerConnection) {
         try {
             await peerConnection.addIceCandidate(candidate);
+            console.log('✅ ICE Candidate hinzugefügt für:', from);
         } catch (error) {
-            console.error('Fehler bei ICE-Candidate:', error);
+            console.error('❌ Fehler bei ICE-Candidate:', error);
         }
+    } else {
+        console.error('❌ Keine Peer Connection gefunden für ICE Candidate von:', from);
     }
 }
 

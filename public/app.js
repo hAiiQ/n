@@ -9,6 +9,9 @@ let currentQuestionData = null;
 
 // WebRTC Manager - Alle Video-Funktionen zentral verwaltet
 let myVideoSlot = null;
+let localAudioEnabled = true;
+let localVideoEnabled = true;
+let isInCall = false;
 
 // WebRTC Konfiguration mit Google STUN-Servern
 const rtcConfig = {
@@ -458,8 +461,6 @@ function processAnswer(correct) {
 }
 
 // Video Call Integration - Variablen bereits oben deklariert
-let localAudioEnabled = true;
-let localVideoEnabled = true;
 
 function setupVideoCallIntegration() {
     setupVideoCallControls();
@@ -566,43 +567,46 @@ class WebRTCManager {
         const videoSlot = this.findAvailableVideoSlot();
         
         if (videoSlot) {
-            const video = videoSlot.querySelector('.player-video');
+            // Unterscheide zwischen großen Player-Video-Slots und Mini-Video-Slots
+            const video = videoSlot.querySelector('.player-video, .mini-video');
             const placeholder = videoSlot.querySelector('.video-placeholder');
             
-            video.srcObject = stream;
-            video.autoplay = true;
-            video.playsInline = true;
-            video.muted = false; // Remote Videos nicht stumm
-            video.style.display = 'block';
-            placeholder.style.display = 'none';
-            
-            videoSlot.classList.add('active');
-            videoSlot.setAttribute('data-peer-id', peerId);
-            
-            const label = videoSlot.querySelector('.player-label');
-            if (label) {
-                label.textContent = peerName;
+            if (video && placeholder) {
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.playsInline = true;
+                video.muted = false; // Remote Videos nicht stumm
+                video.style.display = 'block';
+                placeholder.style.display = 'none';
+                
+                videoSlot.classList.add('active');
+                videoSlot.setAttribute('data-peer-id', peerId);
+                
+                const label = videoSlot.querySelector('.player-label');
+                if (label) {
+                    label.textContent = peerName;
+                }
+                
+                console.log(`✅ Remote Video angezeigt für: ${peerName}`);
             }
-            
-            console.log(`✅ Remote Video angezeigt für: ${peerName}`);
         } else {
             console.warn(`⚠️ Kein verfügbarer Video-Slot für: ${peerName}`);
         }
     }
 
     findAvailableVideoSlot() {
-        // Prüfe welcher Screen aktiv ist und verwende nur die Video-Slots dieses Screens
-        let selectorPrefix = '';
+        // Prüfe welcher Screen aktiv ist und verwende die entsprechenden Video-Slots
+        let selector = '';
         
         if (screens.game.classList.contains('active')) {
-            // Wenn im Game-Screen, verwende nur Game Video-Slots
-            selectorPrefix = '#game-screen ';
+            // Im Game-Screen: Verwende große Player-Video-Slots
+            selector = '#game-screen .player-video-slot:not(.active):not([data-is-local="true"]):not([data-peer-id])';
         } else {
-            // Sonst verwende Lobby Video-Slots (Mini-Videos)
-            return null; // In der Lobby verwenden wir die Mini-Video-Slots nicht für Remote Videos
+            // Im Lobby-Screen: Verwende Mini-Video-Slots
+            selector = '#lobby-screen .mini-video-slot:not(.active):not([data-is-local="true"]):not([data-peer-id])';
         }
         
-        const slots = document.querySelectorAll(`${selectorPrefix}.player-video-slot:not(.active):not([data-is-local="true"])`);
+        const slots = document.querySelectorAll(selector);
         return slots.length > 0 ? slots[0] : null;
     }
 
@@ -1060,11 +1064,11 @@ function clearMyExistingVideos() {
 function clearAllRemoteVideos() {
     console.log('🧹 Entferne alle Remote-Videos...');
     
-    // Alle Remote-Video-Slots finden und zurücksetzen
-    const remoteVideoSlots = document.querySelectorAll('.player-video-slot[data-peer-id]');
+    // Alle Remote-Video-Slots finden und zurücksetzen (sowohl große als auch Mini-Slots)
+    const remoteVideoSlots = document.querySelectorAll('.player-video-slot[data-peer-id], .mini-video-slot[data-peer-id]');
     
     remoteVideoSlots.forEach(slot => {
-        const video = slot.querySelector('.player-video');
+        const video = slot.querySelector('.player-video, .mini-video');
         const placeholder = slot.querySelector('.video-placeholder');
         const overlay = slot.querySelector('.video-overlay');
         

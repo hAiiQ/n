@@ -474,13 +474,32 @@ class WebRTCManager {
         this.localStream = null;
         this.peerConnections = new Map();
         this.isInCall = false;
+        this.availableDevices = {
+            video: [],
+            audio: []
+        };
     }
 
-    async initializeLocalStream() {
+    async getAvailableDevices() {
         try {
-            console.log('🎥 Initialisiere lokalen Video-Stream...');
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            this.availableDevices.video = devices.filter(device => device.kind === 'videoinput');
+            this.availableDevices.audio = devices.filter(device => device.kind === 'audioinput');
             
-            this.localStream = await navigator.mediaDevices.getUserMedia({
+            console.log(`📹 Verfügbare Kameras: ${this.availableDevices.video.length}`);
+            console.log(`🎤 Verfügbare Mikrofone: ${this.availableDevices.audio.length}`);
+            
+            return this.availableDevices;
+        } catch (error) {
+            console.error('❌ Fehler beim Abrufen der Geräte:', error);
+            return null;
+        }
+    }
+
+    async initializeLocalStream(retryOptions = {}) {
+        const strategies = [
+            // Strategie 1: Optimale Qualität
+            {
                 video: { 
                     width: { ideal: 640, max: 1280 }, 
                     height: { ideal: 480, max: 720 },
@@ -490,15 +509,65 @@ class WebRTCManager {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true
+                },
+                name: 'Optimale Qualität'
+            },
+            // Strategie 2: Niedrigere Qualität
+            {
+                video: { 
+                    width: { ideal: 320, max: 640 }, 
+                    height: { ideal: 240, max: 480 }
+                }, 
+                audio: { 
+                    echoCancellation: true
+                },
+                name: 'Mittlere Qualität'
+            },
+            // Strategie 3: Minimale Qualität
+            {
+                video: { 
+                    width: 320, 
+                    height: 240
+                }, 
+                audio: true,
+                name: 'Niedrige Qualität'
+            },
+            // Strategie 4: Nur Audio
+            {
+                video: false,
+                audio: true,
+                name: 'Nur Audio'
+            },
+            // Strategie 5: Spezifische Device ID (falls angegeben)
+            ...(retryOptions.deviceId ? [{
+                video: { deviceId: { exact: retryOptions.deviceId } },
+                audio: true,
+                name: 'Alternative Kamera'
+            }] : [])
+        ];
+
+        for (let i = 0; i < strategies.length; i++) {
+            try {
+                console.log(`🎥 Versuche Strategie ${i + 1}: ${strategies[i].name}...`);
+                
+                this.localStream = await navigator.mediaDevices.getUserMedia(strategies[i]);
+                
+                console.log(`✅ Lokaler Stream erfolgreich erstellt mit: ${strategies[i].name}`);
+                
+                if (!strategies[i].video) {
+                    showNotification('⚠️ Nur Audio verfügbar - keine Kamera gefunden', 'warning');
                 }
-            });
+                
+                return this.localStream;
 
-            console.log('✅ Lokaler Stream erfolgreich erstellt');
-            return this.localStream;
-
-        } catch (error) {
-            console.error('❌ Fehler beim Erstellen des lokalen Streams:', error);
-            throw error;
+            } catch (error) {
+                console.warn(`❌ Strategie ${i + 1} fehlgeschlagen:`, error.name);
+                
+                if (i === strategies.length - 1) {
+                    // Alle Strategien fehlgeschlagen
+                    throw error;
+                }
+            }
         }
     }
 
@@ -882,8 +951,10 @@ function handleMediaError(error) {
             break;
         case 'NotReadableError':
         case 'TrackStartError':
-            message += 'Kamera/Mikrofon wird bereits verwendet. Schließen Sie andere Apps!';
-            break;
+            message += 'Kamera/Mikrofon wird bereits verwendet. Versuche andere Geräte...';
+            // Versuche alternative Geräte
+            tryAlternativeDevices();
+            return;
         case 'OverconstrainedError':
         case 'ConstraintNotSatisfiedError':
             message += 'Kamera unterstützt nicht die angeforderte Qualität. Versuchen Sie es erneut!';
@@ -939,23 +1010,153 @@ async function tryLowerQualityVideo() {
     }
 }
 
+async function tryAlternativeDevices() {
+    try {
+        console.log('🔍 Suche nach alternativen Kameras/Mikrofonen...');
+        showNotification('🔍 Suche nach alternativen Geräten...', 'info');
+        
+        // Alle verfügbaren Medien-Geräte auflisten
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        
+        console.log(`📹 Gefundene Video-Geräte: ${videoDevices.length}`);
+        console.log(`🎤 Gefundene Audio-Geräte: ${audioDevices.length}`);
+        
+        // Versuche jede verfügbare Kamera
+        for (let videoDevice of videoDevices) {
+            try {
+                console.log(`🎯 Versuche Kamera: ${videoDevice.label || 'Unbekannte Kamera'}`);
+                
+                await webrtc.initializeLocalStream({ deviceId: videoDevice.deviceId });
+                
+                // Erfolg! Zeige Video an
+                displayMyVideo(webrtc.localStream);
+                webrtc.isInCall = true;
+                enableMediaControls();
+                updateCallUI();
+                updateCallStatus();
+                updateLobbyCallUI();
+                
+                // Anderen Spielern Beitritt mitteilen
+                socket.emit('player-joined-call', {
+                    lobbyCode: currentLobbyCode,
+                    playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+                    playerId: socket.id
+                });
+                
+                setupPeerConnectionsForExistingPlayers();
+                
+                showNotification(`✅ Alternative Kamera gefunden: ${videoDevice.label || 'Kamera'}`, 'success');
+                return;
+                
+            } catch (deviceError) {
+                console.warn(`❌ Kamera nicht verfügbar: ${videoDevice.label}`, deviceError.name);
+            }
+        }
+        
+        // Wenn keine Kamera funktioniert, versuche nur Audio
+        try {
+            console.log('🎤 Versuche Audio-Only Modus...');
+            
+            await webrtc.initializeLocalStream();
+            
+            // Audio-Only erfolgreich
+            webrtc.isInCall = true;
+            enableMediaControls();
+            updateCallUI();
+            updateCallStatus();
+            updateLobbyCallUI();
+            
+            socket.emit('player-joined-call', {
+                lobbyCode: currentLobbyCode,
+                playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
+                playerId: socket.id
+            });
+            
+            setupPeerConnectionsForExistingPlayers();
+            
+            showNotification('🎤 Audio-Only Modus aktiviert - keine Kamera verfügbar', 'warning');
+            
+        } catch (audioError) {
+            console.error('❌ Auch Audio-Only fehlgeschlagen:', audioError);
+            showNotification('❌ Kein Zugriff auf Kamera oder Mikrofon möglich. Schließen Sie andere Apps und versuchen Sie es erneut!', 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Fehler beim Suchen alternativer Geräte:', error);
+        showNotification('❌ Geräte-Erkennung fehlgeschlagen. Browser neu laden?', 'error');
+    }
+}
+
 function showVideoCallTroubleshooting() {
     const troubleshootMsg = `
-🔧 Lösungsvorschläge:
+🔧 Erweiterte Lösungsvorschläge:
 
 1. 🔒 HTTPS verwenden (automatisch auf Render.com)
 2. 🎯 Auf "Zulassen" klicken wenn Browser fragt
 3. 📹 Kamera/Mikrofon anschließen und testen
 4. 🔄 Andere Apps schließen die Kamera nutzen
-5. 🌐 Chrome, Firefox oder Safari verwenden
-6. 📱 Bei mobilen Geräten: App-Berechtigungen prüfen
+5. 🎥 Alternative Kameras werden automatisch gesucht
+6. � Audio-Only Modus als Fallback verfügbar
+7. �🌐 Chrome, Firefox oder Safari verwenden
+8. 📱 Bei mobilen Geräten: App-Berechtigungen prüfen
+
+✨ NEUE FEATURES:
+- Automatische Suche nach alternativen Kameras
+- Fallback auf Audio-Only wenn keine Kamera verfügbar
+- Verschiedene Qualitätsstufen werden versucht
 
 Das Spiel funktioniert auch ohne Video! 🎮
     `;
     
-    setTimeout(() => {
-        alert(troubleshootMsg);
-    }, 3000);
+    // Erstelle interaktive Troubleshooting-Buttons
+    const troubleshootDiv = document.createElement('div');
+    troubleshootDiv.style.cssText = `
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.9); color: white; padding: 20px; border-radius: 10px;
+        z-index: 10000; max-width: 500px; text-align: center;
+    `;
+    
+    troubleshootDiv.innerHTML = `
+        <h3>🔧 Video-Probleme beheben</h3>
+        <p>Kamera/Mikrofon wird bereits verwendet?</p>
+        <button id="try-alternatives" style="margin: 10px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            🔍 Alternative Geräte suchen
+        </button>
+        <button id="audio-only-mode" style="margin: 10px; padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            🎤 Nur Audio verwenden
+        </button>
+        <button id="close-troubleshoot" style="margin: 10px; padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            ❌ Schließen
+        </button>
+    `;
+    
+    document.body.appendChild(troubleshootDiv);
+    
+    // Event Listener für Buttons
+    document.getElementById('try-alternatives').onclick = () => {
+        document.body.removeChild(troubleshootDiv);
+        tryAlternativeDevices();
+    };
+    
+    document.getElementById('audio-only-mode').onclick = async () => {
+        document.body.removeChild(troubleshootDiv);
+        try {
+            await webrtc.initializeLocalStream({ videoOnly: false });
+            webrtc.isInCall = true;
+            enableMediaControls();
+            updateCallUI();
+            showNotification('🎤 Audio-Only Modus aktiviert', 'success');
+        } catch (error) {
+            showNotification('❌ Auch Audio-Zugriff fehlgeschlagen', 'error');
+        }
+    };
+    
+    document.getElementById('close-troubleshoot').onclick = () => {
+        document.body.removeChild(troubleshootDiv);
+    };
 }
 
 // WebRTC Peer-to-Peer Verbindungen für alle Spieler

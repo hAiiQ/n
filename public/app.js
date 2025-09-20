@@ -6,9 +6,24 @@ let isAdmin = false;
 let currentLobbyCode = null;
 let currentLobby = null;
 let currentQuestionData = null;
-let localStream = null;
-let peerConnections = {};
+
+// WebRTC Variablen - Saubere Trennung
+let localVideoStream = null;
+let peerConnections = new Map(); // Bessere Performance mit Map
+let isInCall = false;
 let myVideoSlot = null;
+
+// WebRTC Konfiguration mit Google STUN-Servern
+const rtcConfig = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+    ],
+    iceCandidatePoolSize: 10
+};
 
 // DOM Elemente
 const screens = {
@@ -191,19 +206,19 @@ socket.on('player-joined-call-notification', (data) => {
     showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
     
     // Wenn ich bereits im Call bin, Verbindung zu dem neuen Spieler aufbauen
-    if (isInCall && data.playerId !== socket.id) {
-        console.log(`🔗 Baue Verbindung zu neuem Spieler auf: ${data.playerName} (${data.playerId})`);
+    if (webrtc.isInCall && data.playerId !== socket.id) {
+        console.log(`🔗 Baue Verbindung zu neuem Spieler auf: ${data.playerName}`);
         
         // Peer Connection erstellen
-        createPeerConnection(data.playerId, data.playerName);
+        webrtc.createPeerConnection(data.playerId, data.playerName);
         
-        // Als "Initiator" ein Offer senden (mit Delay für stabilere Verbindung)
-        setTimeout(() => {
-            console.log(`🎯 Initiiere Verbindung zu: ${data.playerName}`);
-            initiateConnection(data.playerId);
-        }, 2000);
-    } else {
-        console.log(`ℹ️ Nicht im Call oder eigener Beitritt - keine Aktion erforderlich`);
+        // Als niedrigere Socket-ID sende ich das Offer (verhindert doppelte Offers)
+        if (socket.id < data.playerId) {
+            setTimeout(() => {
+                console.log(`🎯 Sende Offer an neuen Spieler: ${data.playerName}`);
+                webrtc.createOffer(data.playerId);
+            }, 1500);
+        }
     }
     
     updateCallStatus();
@@ -427,18 +442,158 @@ function processAnswer(correct) {
     }
 }
 
-// Video Call Integration
-let localVideoStream = null;
+// Video Call Integration - Variablen bereits oben deklariert
 let localAudioEnabled = true;
 let localVideoEnabled = true;
-let isInCall = false;
-let connectedPeers = new Map(); // PlayerId -> {connection, name, videoElement}
 
 function setupVideoCallIntegration() {
     setupVideoCallControls();
     updateCallStatus();
     initializeWebRTC();
 }
+
+// WebRTC Manager - Saubere Implementierung
+class WebRTCManager {
+    constructor() {
+        this.localStream = null;
+        this.peerConnections = new Map();
+        this.isInCall = false;
+    }
+
+    async initializeLocalStream() {
+        try {
+            console.log('🎥 Initialisiere lokalen Video-Stream...');
+            
+            this.localStream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    width: { ideal: 640, max: 1280 }, 
+                    height: { ideal: 480, max: 720 },
+                    facingMode: 'user'
+                }, 
+                audio: { 
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            console.log('✅ Lokaler Stream erfolgreich erstellt');
+            return this.localStream;
+
+        } catch (error) {
+            console.error('❌ Fehler beim Erstellen des lokalen Streams:', error);
+            throw error;
+        }
+    }
+
+    createPeerConnection(peerId, peerName) {
+        console.log(`📡 Erstelle PeerConnection für: ${peerName} (${peerId})`);
+        
+        const peerConnection = new RTCPeerConnection(rtcConfig);
+
+        // Lokalen Stream hinzufügen
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, this.localStream);
+                console.log(`➕ Track hinzugefügt: ${track.kind}`);
+            });
+        }
+
+        // Remote Stream Handler
+        peerConnection.ontrack = (event) => {
+            console.log(`📺 Remote Stream empfangen von: ${peerName}`);
+            const [remoteStream] = event.streams;
+            this.displayRemoteVideo(peerId, peerName, remoteStream);
+        };
+
+        // ICE Candidate Handler
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.log(`🧊 Sende ICE Candidate an: ${peerName}`);
+                socket.emit('ice-candidate', {
+                    target: peerId,
+                    candidate: event.candidate,
+                    lobbyCode: currentLobbyCode
+                });
+            }
+        };
+
+        // Connection State Handler
+        peerConnection.onconnectionstatechange = () => {
+            console.log(`🔗 Verbindung zu ${peerName}: ${peerConnection.connectionState}`);
+            
+            if (peerConnection.connectionState === 'connected') {
+                showNotification(`✅ Verbunden mit ${peerName}`, 'success');
+            } else if (peerConnection.connectionState === 'failed') {
+                showNotification(`❌ Verbindung zu ${peerName} fehlgeschlagen`, 'error');
+            }
+        };
+
+        this.peerConnections.set(peerId, { connection: peerConnection, name: peerName });
+        return peerConnection;
+    }
+
+    displayRemoteVideo(peerId, peerName, stream) {
+        console.log(`🖥️ Zeige Remote Video für: ${peerName}`);
+        
+        // Finde verfügbaren Video-Slot
+        const videoSlot = this.findAvailableVideoSlot();
+        
+        if (videoSlot) {
+            const video = videoSlot.querySelector('.player-video');
+            const placeholder = videoSlot.querySelector('.video-placeholder');
+            
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = false; // Remote Videos nicht stumm
+            video.style.display = 'block';
+            placeholder.style.display = 'none';
+            
+            videoSlot.classList.add('active');
+            videoSlot.setAttribute('data-peer-id', peerId);
+            
+            const label = videoSlot.querySelector('.player-label');
+            if (label) {
+                label.textContent = peerName;
+            }
+            
+            console.log(`✅ Remote Video angezeigt für: ${peerName}`);
+        } else {
+            console.warn(`⚠️ Kein verfügbarer Video-Slot für: ${peerName}`);
+        }
+    }
+
+    findAvailableVideoSlot() {
+        const slots = document.querySelectorAll('.player-video-slot:not(.active)');
+        return slots.length > 0 ? slots[0] : null;
+    }
+
+    async createOffer(peerId) {
+        const peerData = this.peerConnections.get(peerId);
+        if (!peerData) return;
+
+        try {
+            console.log(`🎯 Erstelle Offer für: ${peerData.name}`);
+            
+            const offer = await peerData.connection.createOffer();
+            await peerData.connection.setLocalDescription(offer);
+            
+            socket.emit('webrtc-offer', {
+                target: peerId,
+                offer: offer,
+                lobbyCode: currentLobbyCode
+            });
+            
+            console.log(`📤 Offer gesendet an: ${peerData.name}`);
+        } catch (error) {
+            console.error('❌ Fehler beim Erstellen des Offers:', error);
+        }
+    }
+}
+
+// Globale WebRTC Manager Instanz
+const webrtc = new WebRTCManager();
 
 function initializeWebRTC() {
     console.log('🔄 WebRTC initialisiert für Lobby:', currentLobbyCode);
@@ -502,60 +657,87 @@ function checkBrowserSupport() {
 }
 
 async function joinVideoCall() {
-    // Check if HTTPS or localhost
+    console.log('🎬 Starte Video Call...');
+    
+    // Sicherheitsprüfung
     const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    
     if (!isSecure) {
-        showHTTPSWarning();
+        showNotification('🔒 HTTPS erforderlich für Webcam-Zugriff!', 'error');
         return;
     }
-    
-    // Check if getUserMedia is available
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showNotification('❌ Webcam/Mikrofon wird von diesem Browser nicht unterstützt!', 'error');
-        return;
-    }
-    
+
     try {
-        // Erst nur Audio versuchen, dann Video
-        localVideoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                width: { ideal: 640, max: 1280 }, 
-                height: { ideal: 480, max: 720 },
-                facingMode: 'user'
-            }, 
-            audio: { 
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            } 
-        });
+        // 1. Lokalen Video-Stream initialisieren
+        await webrtc.initializeLocalStream();
         
-        // Eigenes Video anzeigen
-        displayMyVideo();
+        // 2. Eigenes Video anzeigen
+        displayMyVideo(webrtc.localStream);
         
-        // UI aktualisieren
+        // 3. UI aktualisieren
         isInCall = true;
+        webrtc.isInCall = true;
         updateCallUI();
         updateCallStatus();
         updateLobbyCallUI();
         
-        // WebRTC Peer Connections zu allen anderen Spielern aufbauen
-        setupPeerConnections();
-        
-        // Allen anderen Spielern mitteilen, dass ich beigetreten bin
+        // 4. Anderen Spielern Beitritt mitteilen
         socket.emit('player-joined-call', {
             lobbyCode: currentLobbyCode,
             playerName: isAdmin ? currentLobby.adminName : getPlayerName(),
             playerId: socket.id
         });
         
-        showNotification('📹 Video Call gestartet! Andere Spieler werden verbunden...', 'success');
+        // 5. Peer Connections für bereits im Call befindliche Spieler erstellen
+        setupPeerConnectionsForExistingPlayers();
+        
+        showNotification('📹 Video Call gestartet! Verbinde mit anderen Spielern...', 'success');
         
     } catch (error) {
-        console.error('Fehler beim Video Call Beitritt:', error);
+        console.error('❌ Fehler beim Video Call:', error);
         handleMediaError(error);
     }
+}
+
+function setupPeerConnectionsForExistingPlayers() {
+    console.log('🔗 Erstelle Peer Connections für existierende Spieler...');
+    
+    // Alle anderen Spieler in der Lobby finden
+    const otherPlayers = [];
+    
+    if (isAdmin) {
+        // Als Admin: Verbinde mit allen Spielern
+        currentLobby.players.forEach(player => {
+            if (player.id !== socket.id) {
+                otherPlayers.push({ id: player.id, name: player.name });
+            }
+        });
+    } else {
+        // Als Spieler: Verbinde mit Admin und anderen Spielern
+        if (currentLobby.admin !== socket.id) {
+            otherPlayers.push({ id: currentLobby.admin, name: currentLobby.adminName });
+        }
+        
+        currentLobby.players.forEach(player => {
+            if (player.id !== socket.id) {
+                otherPlayers.push({ id: player.id, name: player.name });
+            }
+        });
+    }
+    
+    console.log(`� Gefunden ${otherPlayers.length} andere Spieler:`, otherPlayers.map(p => p.name));
+    
+    // Für jeden anderen Spieler eine Peer Connection erstellen
+    otherPlayers.forEach(player => {
+        webrtc.createPeerConnection(player.id, player.name);
+        
+        // Als niedrigste Socket-ID initiieren (verhindert doppelte Offers)
+        if (socket.id < player.id) {
+            setTimeout(() => {
+                console.log(`🎯 Initiiere Verbindung zu: ${player.name}`);
+                webrtc.createOffer(player.id);
+            }, 1000 + Math.random() * 500); // Zufällig verzögert für Stabilität
+        }
+    });
 }
 
 function showHTTPSWarning() {
@@ -883,27 +1065,28 @@ async function createAndSendOffer(playerId) {
 }
 
 async function handleOffer(data) {
-    console.log('📨 Offer empfangen:', data);
+    console.log('📨 Offer empfangen von:', data.from);
     const { from, offer } = data;
     
-    if (!peerConnections[from]) {
-        // Peer Connection erstellen falls noch nicht vorhanden
+    // Peer Connection erstellen falls noch nicht vorhanden
+    if (!webrtc.peerConnections.has(from)) {
         const playerName = getPlayerNameById(from);
         console.log(`🔗 Erstelle Peer Connection für eingehenden Offer von: ${playerName}`);
-        createPeerConnection(from, playerName);
+        webrtc.createPeerConnection(from, playerName);
     }
     
-    const peerConnection = peerConnections[from];
+    const peerData = webrtc.peerConnections.get(from);
+    const peerConnection = peerData.connection;
     
     try {
-        console.log('📝 Setze Remote Description...');
+        console.log('📝 Setze Remote Description (Offer)...');
         await peerConnection.setRemoteDescription(offer);
         
         console.log('💬 Erstelle Answer...');
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         
-        console.log('📤 Sende Answer zurück an:', from);
+        console.log('📤 Sende Answer zurück an:', peerData.name);
         socket.emit('webrtc-answer', {
             target: from,
             answer: answer,
@@ -915,15 +1098,16 @@ async function handleOffer(data) {
 }
 
 async function handleAnswer(data) {
-    console.log('📨 Answer empfangen:', data);
+    console.log('📨 Answer empfangen von:', data.from);
     const { from, answer } = data;
-    const peerConnection = peerConnections[from];
     
-    if (peerConnection) {
+    const peerData = webrtc.peerConnections.get(from);
+    
+    if (peerData) {
         try {
             console.log('📝 Setze Remote Description (Answer)...');
-            await peerConnection.setRemoteDescription(answer);
-            console.log('✅ Answer verarbeitet für:', from);
+            await peerData.connection.setRemoteDescription(answer);
+            console.log('✅ Answer verarbeitet für:', peerData.name);
         } catch (error) {
             console.error('❌ Fehler bei Answer-Verarbeitung:', error);
         }
@@ -933,14 +1117,15 @@ async function handleAnswer(data) {
 }
 
 async function handleIceCandidate(data) {
-    console.log('🧊 ICE Candidate empfangen:', data);
+    console.log('🧊 ICE Candidate empfangen von:', data.from);
     const { from, candidate } = data;
-    const peerConnection = peerConnections[from];
     
-    if (peerConnection) {
+    const peerData = webrtc.peerConnections.get(from);
+    
+    if (peerData) {
         try {
-            await peerConnection.addIceCandidate(candidate);
-            console.log('✅ ICE Candidate hinzugefügt für:', from);
+            await peerData.connection.addIceCandidate(candidate);
+            console.log('✅ ICE Candidate hinzugefügt für:', peerData.name);
         } catch (error) {
             console.error('❌ Fehler bei ICE-Candidate:', error);
         }
@@ -958,13 +1143,15 @@ function getPlayerNameById(playerId) {
     return player ? player.name : 'Unbekannt';
 }
 
-function displayMyVideo() {
+function displayMyVideo(stream) {
+    console.log('🖥️ Zeige eigenes Video...');
+    
     // Zeige Video sowohl in Lobby als auch im Spiel an
-    displayMyVideoInGame();
-    displayMyVideoInLobby();
+    displayMyVideoInGame(stream);
+    displayMyVideoInLobby(stream);
 }
 
-function displayMyVideoInGame() {
+function displayMyVideoInGame(stream) {
     const playerSlot = isAdmin ? 
         document.getElementById('admin-video') : 
         getAvailableVideoSlot();
@@ -974,7 +1161,7 @@ function displayMyVideoInGame() {
         const video = playerSlot.querySelector('.player-video');
         const placeholder = playerSlot.querySelector('.video-placeholder');
         
-        video.srcObject = localVideoStream;
+        video.srcObject = stream;
         video.muted = true; // Eigenes Video stumm schalten
         video.autoplay = true;
         video.playsInline = true;
@@ -1001,7 +1188,7 @@ function displayMyVideoInGame() {
     }
 }
 
-function displayMyVideoInLobby() {
+function displayMyVideoInLobby(stream) {
     // Video auch in der Lobby-Vorschau anzeigen
     const lobbySlot = isAdmin ? 
         document.getElementById('lobby-admin-video') : 
@@ -1011,7 +1198,7 @@ function displayMyVideoInLobby() {
         const video = lobbySlot.querySelector('.mini-video');
         const placeholder = lobbySlot.querySelector('.video-placeholder');
         
-        video.srcObject = localVideoStream;
+        video.srcObject = stream;
         video.muted = true;
         video.style.display = 'block';
         placeholder.style.display = 'none';

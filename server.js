@@ -185,45 +185,59 @@ io.on('connection', (socket) => {
         console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen`);
     });
     
-    // Video Call Management (Admin-only)
-    socket.on('video-call-created', (data) => {
-        const { lobbyCode, roomName, adminName } = data;
-        socket.to(lobbyCode).emit('video-call-created', { roomName, adminName });
-        console.log(`Admin ${adminName} hat Video Call ${roomName} für Lobby ${lobbyCode} erstellt`);
-    });
-    
-    socket.on('video-call-stopped', (data) => {
-        const { lobbyCode } = data;
-        socket.to(lobbyCode).emit('video-call-stopped');
-        console.log(`Video Call für Lobby ${lobbyCode} wurde beendet`);
-    });
-    
-    // WebRTC Signaling
+    // WebRTC Signaling - Minimaler sauberer Signaling-Server
     socket.on('webrtc-offer', (data) => {
         const { target, offer, lobbyCode } = data;
+        
+        // Validierung
+        if (!target || !offer) {
+            console.error('Invalid offer data:', data);
+            return;
+        }
+        
         socket.to(target).emit('webrtc-offer', {
             from: socket.id,
-            offer: offer
+            offer: offer,
+            lobbyCode: lobbyCode
         });
-        console.log(`WebRTC Offer von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
+        
+        console.log(`📤 WebRTC Offer: ${socket.id} → ${target}`);
     });
     
     socket.on('webrtc-answer', (data) => {
         const { target, answer, lobbyCode } = data;
+        
+        // Validierung
+        if (!target || !answer) {
+            console.error('Invalid answer data:', data);
+            return;
+        }
+        
         socket.to(target).emit('webrtc-answer', {
             from: socket.id,
-            answer: answer
+            answer: answer,
+            lobbyCode: lobbyCode
         });
-        console.log(`WebRTC Answer von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
+        
+        console.log(`📤 WebRTC Answer: ${socket.id} → ${target}`);
     });
     
     socket.on('ice-candidate', (data) => {
         const { target, candidate, lobbyCode } = data;
+        
+        // Validierung
+        if (!target || !candidate) {
+            console.error('Invalid ICE candidate data:', data);
+            return;
+        }
+        
         socket.to(target).emit('ice-candidate', {
             from: socket.id,
-            candidate: candidate
+            candidate: candidate,
+            lobbyCode: lobbyCode
         });
-        console.log(`ICE Candidate von ${socket.id} an ${target} in Lobby ${lobbyCode}`);
+        
+        console.log(`🧊 ICE Candidate: ${socket.id} → ${target}`);
     });
     
     // Verbindung getrennt

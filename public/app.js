@@ -495,7 +495,17 @@ class WebRTCManager {
 
     async initializeLocalStream(retryOptions = {}) {
         const strategies = [
-            // Strategie 1: Optimale Qualität
+            // Strategie 1: Spezifische Device ID (für Elgato Cam Link etc.)
+            ...(retryOptions.deviceId ? [{
+                video: { 
+                    deviceId: { exact: retryOptions.deviceId },
+                    width: { ideal: 1920, max: 1920 }, 
+                    height: { ideal: 1080, max: 1080 }
+                },
+                audio: true,
+                name: `Capture Device: ${retryOptions.deviceLabel || 'Unbekannt'}`
+            }] : []),
+            // Strategie 2: Optimale Qualität (normale Webcams)
             {
                 video: { 
                     width: { ideal: 640, max: 1280 }, 
@@ -804,6 +814,12 @@ function setupVideoCallControls() {
     if (toggleVideoBtn) toggleVideoBtn.addEventListener('click', toggleVideo);
     if (leaveCallBtn) leaveCallBtn.addEventListener('click', leaveVideoCall);
     
+    // Geräte-Debug Button
+    const deviceDebugBtn = document.getElementById('device-debug-btn');
+    if (deviceDebugBtn) {
+        deviceDebugBtn.addEventListener('click', showDeviceDebugInfo);
+    }
+    
     // Browser-Kompatibilität prüfen
     checkBrowserSupport();
 }
@@ -844,6 +860,23 @@ async function joinVideoCall() {
     }
 
     try {
+        // 0. Automatische Elgato Cam Link Erkennung
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const elgatoDevices = devices.filter(device => 
+                device.kind === 'videoinput' && 
+                (device.label.toLowerCase().includes('cam link') || 
+                 device.label.toLowerCase().includes('elgato'))
+            );
+            
+            if (elgatoDevices.length > 0) {
+                console.log(`🎥 ${elgatoDevices.length} Elgato Cam Link(s) erkannt!`);
+                showNotification(`🎥 Elgato Cam Link erkannt! Erweiterte Unterstützung aktiviert.`, 'info');
+            }
+        } catch (detectionError) {
+            console.log('ℹ️ Elgato-Erkennung übersprungen:', detectionError.name);
+        }
+        
         // 1. Lokalen Video-Stream initialisieren
         await webrtc.initializeLocalStream();
         
@@ -1021,12 +1054,53 @@ async function tryAlternativeDevices() {
         console.log(`📹 Gefundene Video-Geräte: ${videoDevices.length}`);
         console.log(`🎤 Gefundene Audio-Geräte: ${audioDevices.length}`);
         
-        // Versuche jede verfügbare Kamera
-        for (let videoDevice of videoDevices) {
+        // Spezielle Erkennung für Capture-Devices
+        const captureDevices = videoDevices.filter(device => 
+            device.label.toLowerCase().includes('cam link') ||
+            device.label.toLowerCase().includes('capture') ||
+            device.label.toLowerCase().includes('elgato') ||
+            device.label.toLowerCase().includes('obs') ||
+            device.label.toLowerCase().includes('streamlabs') ||
+            device.label.toLowerCase().includes('hdmi')
+        );
+        
+        if (captureDevices.length > 0) {
+            console.log(`🎥 Gefundene Capture-Devices: ${captureDevices.length}`);
+            captureDevices.forEach(device => {
+                console.log(`  - ${device.label || 'Unbekanntes Capture-Device'}`);
+            });
+            showNotification(`🎥 ${captureDevices.length} Capture-Device(s) gefunden (Elgato, HDMI etc.)`, 'info');
+        }
+        
+        // Priorisiere Capture-Devices (Elgato Cam Link, HDMI Capture etc.)
+        let devicesToTry = [];
+        if (captureDevices.length > 0) {
+            console.log('🎥 Versuche Capture-Devices zuerst...');
+            devicesToTry = [...captureDevices, ...videoDevices.filter(d => !captureDevices.includes(d))];
+        } else {
+            devicesToTry = videoDevices;
+        }
+        
+        // Versuche jede verfügbare Kamera (Capture-Devices haben Priorität)
+        for (let videoDevice of devicesToTry) {
             try {
-                console.log(`🎯 Versuche Kamera: ${videoDevice.label || 'Unbekannte Kamera'}`);
+                const deviceLabel = videoDevice.label || 'Unbekannte Kamera';
+                const isCaptureDevice = captureDevices.includes(videoDevice);
                 
-                await webrtc.initializeLocalStream({ deviceId: videoDevice.deviceId });
+                console.log(`🎯 Versuche ${isCaptureDevice ? 'Capture-Device' : 'Kamera'}: ${deviceLabel}`);
+                
+                // Spezielle Constraints für Capture-Devices
+                const constraints = {
+                    deviceId: videoDevice.deviceId,
+                    ...(isCaptureDevice && {
+                        // Höhere Auflösung für Capture-Devices
+                        width: { ideal: 1920, min: 1280 },
+                        height: { ideal: 1080, min: 720 },
+                        frameRate: { ideal: 30, min: 15 }
+                    })
+                };
+                
+                await webrtc.initializeLocalStream({ deviceId: constraints.deviceId });
                 
                 // Erfolg! Zeige Video an
                 displayMyVideo(webrtc.localStream);
@@ -1035,6 +1109,10 @@ async function tryAlternativeDevices() {
                 updateCallUI();
                 updateCallStatus();
                 updateLobbyCallUI();
+                
+                if (isCaptureDevice) {
+                    showNotification(`🎥 Capture-Device erfolgreich aktiviert: ${deviceLabel}`, 'success');
+                }
                 
                 // Anderen Spielern Beitritt mitteilen
                 socket.emit('player-joined-call', {
@@ -1087,6 +1165,95 @@ async function tryAlternativeDevices() {
     }
 }
 
+// Spezielle Diagnose-Funktion für Elgato Cam Link und Capture-Devices
+async function diagnoseElgatoCamLink() {
+    console.log('🎥 Starte Elgato Cam Link Diagnose...');
+    
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        console.log('📊 Alle Video-Geräte:');
+        videoDevices.forEach((device, index) => {
+            console.log(`  ${index + 1}. ${device.label || 'Unbekanntes Gerät'}`);
+            console.log(`     Device ID: ${device.deviceId}`);
+            console.log(`     Group ID: ${device.groupId}`);
+        });
+        
+        // Suche nach Elgato/Capture-Devices
+        const elgatoDevices = videoDevices.filter(device => 
+            device.label.toLowerCase().includes('cam link') ||
+            device.label.toLowerCase().includes('elgato') ||
+            device.label.toLowerCase().includes('4k60') ||
+            device.label.toLowerCase().includes('hd60')
+        );
+        
+        if (elgatoDevices.length === 0) {
+            console.log('⚠️ Kein Elgato Cam Link gefunden');
+            showNotification('⚠️ Elgato Cam Link nicht erkannt. Ist es angeschlossen und im Elgato Game Capture installiert?', 'warning');
+            return;
+        }
+        
+        console.log(`🎥 ${elgatoDevices.length} Elgato Device(s) gefunden:`);
+        
+        for (const device of elgatoDevices) {
+            console.log(`🔍 Teste Elgato Device: ${device.label}`);
+            
+            // Teste verschiedene Auflösungen für Elgato Cam Link
+            const testConfigs = [
+                { width: 1920, height: 1080, frameRate: 30, label: '1080p30' },
+                { width: 1920, height: 1080, frameRate: 60, label: '1080p60' },
+                { width: 1280, height: 720, frameRate: 60, label: '720p60' },
+                { width: 1280, height: 720, frameRate: 30, label: '720p30' },
+                { width: 640, height: 480, frameRate: 30, label: '480p30' }
+            ];
+            
+            for (const config of testConfigs) {
+                try {
+                    console.log(`  📏 Teste ${config.label}...`);
+                    
+                    const testConstraints = {
+                        video: {
+                            deviceId: { exact: device.deviceId },
+                            width: { ideal: config.width },
+                            height: { ideal: config.height },
+                            frameRate: { ideal: config.frameRate }
+                        },
+                        audio: true
+                    };
+                    
+                    const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
+                    
+                    // Erfolg! Stream Info anzeigen
+                    const videoTrack = testStream.getVideoTracks()[0];
+                    const settings = videoTrack.getSettings();
+                    
+                    console.log(`  ✅ ${config.label} funktioniert!`);
+                    console.log(`     Tatsächliche Auflösung: ${settings.width}x${settings.height}`);
+                    console.log(`     Tatsächliche Framerate: ${settings.frameRate}fps`);
+                    
+                    showNotification(`✅ Elgato Cam Link funktioniert mit ${config.label} (${settings.width}x${settings.height})`, 'success');
+                    
+                    // Stream stoppen (nur Test)
+                    testStream.getTracks().forEach(track => track.stop());
+                    
+                    return { device, config, settings };
+                    
+                } catch (error) {
+                    console.log(`  ❌ ${config.label} fehlgeschlagen: ${error.name}`);
+                }
+            }
+        }
+        
+        console.log('❌ Alle Elgato Cam Link Tests fehlgeschlagen');
+        showNotification('❌ Elgato Cam Link gefunden, aber keine funktionierenden Einstellungen. Prüfen Sie die Elgato Game Capture Software.', 'error');
+        
+    } catch (error) {
+        console.error('❌ Elgato Cam Link Diagnose fehlgeschlagen:', error);
+        showNotification('❌ Diagnose fehlgeschlagen. Browser-Berechtigungen prüfen?', 'error');
+    }
+}
+
 function showVideoCallTroubleshooting() {
     const troubleshootMsg = `
 🔧 Erweiterte Lösungsvorschläge:
@@ -1119,13 +1286,16 @@ Das Spiel funktioniert auch ohne Video! 🎮
     troubleshootDiv.innerHTML = `
         <h3>🔧 Video-Probleme beheben</h3>
         <p>Kamera/Mikrofon wird bereits verwendet?</p>
-        <button id="try-alternatives" style="margin: 10px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        <button id="try-alternatives" style="margin: 5px; padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
             🔍 Alternative Geräte suchen
         </button>
-        <button id="audio-only-mode" style="margin: 10px; padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        <button id="elgato-diagnose" style="margin: 5px; padding: 10px 15px; background: #6f42c1; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            🎥 Elgato Cam Link testen
+        </button>
+        <button id="audio-only-mode" style="margin: 5px; padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">
             🎤 Nur Audio verwenden
         </button>
-        <button id="close-troubleshoot" style="margin: 10px; padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        <button id="close-troubleshoot" style="margin: 5px; padding: 10px 15px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
             ❌ Schließen
         </button>
     `;
@@ -1136,6 +1306,11 @@ Das Spiel funktioniert auch ohne Video! 🎮
     document.getElementById('try-alternatives').onclick = () => {
         document.body.removeChild(troubleshootDiv);
         tryAlternativeDevices();
+    };
+    
+    document.getElementById('elgato-diagnose').onclick = () => {
+        document.body.removeChild(troubleshootDiv);
+        diagnoseElgatoCamLink();
     };
     
     document.getElementById('audio-only-mode').onclick = async () => {
@@ -1154,6 +1329,192 @@ Das Spiel funktioniert auch ohne Video! 🎮
     document.getElementById('close-troubleshoot').onclick = () => {
         document.body.removeChild(troubleshootDiv);
     };
+}
+
+// Erweiterte Geräte-Debug-Info anzeigen
+async function showDeviceDebugInfo() {
+    console.log('🔍 Zeige erweiterte Geräte-Debug-Informationen...');
+    
+    try {
+        // Berechtigungen prüfen
+        const permissions = await navigator.permissions.query({ name: 'camera' });
+        console.log('📷 Kamera-Berechtigung:', permissions.state);
+        
+        const audioPermissions = await navigator.permissions.query({ name: 'microphone' });
+        console.log('🎤 Mikrofon-Berechtigung:', audioPermissions.state);
+        
+        // Alle verfügbaren Geräte auflisten
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        const audioOutputDevices = devices.filter(device => device.kind === 'audiooutput');
+        
+        // Spezielle Geräte-Kategorien
+        const captureDevices = videoDevices.filter(device => 
+            device.label.toLowerCase().includes('cam link') ||
+            device.label.toLowerCase().includes('capture') ||
+            device.label.toLowerCase().includes('elgato') ||
+            device.label.toLowerCase().includes('obs') ||
+            device.label.toLowerCase().includes('streamlabs') ||
+            device.label.toLowerCase().includes('hdmi') ||
+            device.label.toLowerCase().includes('4k60') ||
+            device.label.toLowerCase().includes('hd60')
+        );
+        
+        const webcams = videoDevices.filter(device => !captureDevices.includes(device));
+        
+        // Browser-Info
+        const browserInfo = {
+            userAgent: navigator.userAgent,
+            vendor: navigator.vendor || 'Unbekannt',
+            platform: navigator.platform || 'Unbekannt',
+            cookieEnabled: navigator.cookieEnabled,
+            language: navigator.language || 'Unbekannt'
+        };
+        
+        // WebRTC-Unterstützung
+        const webrtcSupport = {
+            getUserMedia: !!navigator.mediaDevices?.getUserMedia,
+            RTCPeerConnection: !!window.RTCPeerConnection,
+            RTCSessionDescription: !!window.RTCSessionDescription,
+            RTCIceCandidate: !!window.RTCIceCandidate
+        };
+        
+        // Debug-Info zusammenstellen
+        let debugInfo = `
+🔍 ERWEITERTE GERÄTE-DEBUG-INFORMATIONEN
+=============================================
+
+📱 BROWSER-INFO:
+- User Agent: ${browserInfo.userAgent}
+- Vendor: ${browserInfo.vendor}
+- Platform: ${browserInfo.platform}
+- Cookies: ${browserInfo.cookieEnabled ? '✅' : '❌'}
+- Sprache: ${browserInfo.language}
+
+🔒 BERECHTIGUNGEN:
+- Kamera: ${permissions.state} ${permissions.state === 'granted' ? '✅' : '❌'}
+- Mikrofon: ${audioPermissions.state} ${audioPermissions.state === 'granted' ? '✅' : '❌'}
+
+🌐 WEBRTC-UNTERSTÜTZUNG:
+- getUserMedia: ${webrtcSupport.getUserMedia ? '✅' : '❌'}
+- RTCPeerConnection: ${webrtcSupport.RTCPeerConnection ? '✅' : '❌'}
+- RTCSessionDescription: ${webrtcSupport.RTCSessionDescription ? '✅' : '❌'}
+- RTCIceCandidate: ${webrtcSupport.RTCIceCandidate ? '✅' : '❌'}
+
+📹 VIDEO-GERÄTE GESAMT: ${videoDevices.length}
+${videoDevices.map((device, index) => `
+  ${index + 1}. ${device.label || 'Unbekanntes Gerät'}
+     ID: ${device.deviceId}
+     Gruppe: ${device.groupId}`).join('')}
+
+🎥 CAPTURE-DEVICES: ${captureDevices.length}
+${captureDevices.map((device, index) => `
+  ${index + 1}. ${device.label || 'Unbekanntes Capture-Device'}
+     ID: ${device.deviceId}
+     Gruppe: ${device.groupId}`).join('')}
+
+📷 NORMALE WEBCAMS: ${webcams.length}
+${webcams.map((device, index) => `
+  ${index + 1}. ${device.label || 'Unbekannte Webcam'}
+     ID: ${device.deviceId}
+     Gruppe: ${device.groupId}`).join('')}
+
+🎤 AUDIO-EINGABE: ${audioDevices.length}
+${audioDevices.map((device, index) => `
+  ${index + 1}. ${device.label || 'Unbekanntes Mikrofon'}
+     ID: ${device.deviceId}
+     Gruppe: ${device.groupId}`).join('')}
+
+🔊 AUDIO-AUSGABE: ${audioOutputDevices.length}
+${audioOutputDevices.map((device, index) => `
+  ${index + 1}. ${device.label || 'Unbekannter Lautsprecher'}
+     ID: ${device.deviceId}
+     Gruppe: ${device.groupId}`).join('')}
+
+📊 AKTUELLER STREAM-STATUS:
+- Stream aktiv: ${webrtc.localStream ? '✅' : '❌'}
+- Video Tracks: ${webrtc.localStream ? webrtc.localStream.getVideoTracks().length : 0}
+- Audio Tracks: ${webrtc.localStream ? webrtc.localStream.getAudioTracks().length : 0}
+${webrtc.localStream ? webrtc.localStream.getVideoTracks().map((track, i) => `
+  Video Track ${i + 1}:
+    - Label: ${track.label}
+    - Enabled: ${track.enabled ? '✅' : '❌'}
+    - Ready State: ${track.readyState}
+    - Constraints: ${JSON.stringify(track.getConstraints(), null, 2)}
+    - Settings: ${JSON.stringify(track.getSettings(), null, 2)}`).join('') : ''}
+
+🔗 PEER CONNECTIONS:
+- Anzahl aktive Verbindungen: ${webrtc.peerConnections ? webrtc.peerConnections.size : 0}
+${webrtc.peerConnections ? Array.from(webrtc.peerConnections.entries()).map(([peerId, peer]) => `
+  - Peer ${peer.name}: ${peer.connection.connectionState}`).join('') : ''}
+
+💡 EMPFEHLUNGEN:
+${captureDevices.length > 0 ? '✅ Capture-Devices erkannt - sollten funktionieren!' : '⚠️ Keine Capture-Devices gefunden'}
+${permissions.state !== 'granted' ? '❗ Kamera-Berechtigung fehlt - auf "Zulassen" klicken!' : '✅ Kamera-Berechtigung erteilt'}
+${!webrtcSupport.getUserMedia ? '❌ Browser unterstützt keine Webcam-Funktionen!' : '✅ Browser unterstützt WebRTC'}
+        `;
+        
+        // Debug-Info in Modal anzeigen
+        const debugModal = document.createElement('div');
+        debugModal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); color: white; padding: 20px; 
+            z-index: 10000; overflow-y: auto; font-family: monospace; font-size: 12px;
+        `;
+        
+        debugModal.innerHTML = `
+            <div style="max-width: 800px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">🔍 Geräte-Debug-Info</h2>
+                    <button id="close-debug" style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        ❌ Schließen
+                    </button>
+                </div>
+                <pre style="white-space: pre-wrap; background: #111; padding: 20px; border-radius: 8px; max-height: 70vh; overflow-y: auto;">${debugInfo}</pre>
+                <div style="margin-top: 20px; text-align: center;">
+                    <button id="test-elgato-debug" style="margin: 5px; padding: 10px 15px; background: #6f42c1; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        🎥 Elgato Cam Link testen
+                    </button>
+                    <button id="copy-debug-info" style="margin: 5px; padding: 10px 15px; background: #17a2b8; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        📋 Info kopieren
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(debugModal);
+        
+        // Event Handlers für Debug-Modal
+        document.getElementById('close-debug').onclick = () => {
+            document.body.removeChild(debugModal);
+        };
+        
+        document.getElementById('test-elgato-debug').onclick = () => {
+            document.body.removeChild(debugModal);
+            diagnoseElgatoCamLink();
+        };
+        
+        document.getElementById('copy-debug-info').onclick = () => {
+            navigator.clipboard.writeText(debugInfo).then(() => {
+                showNotification('📋 Debug-Info in Zwischenablage kopiert!', 'success');
+            }).catch(() => {
+                showNotification('❌ Kopieren fehlgeschlagen', 'error');
+            });
+        };
+        
+        // Schließen bei Klick außerhalb
+        debugModal.onclick = (e) => {
+            if (e.target === debugModal) {
+                document.body.removeChild(debugModal);
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ Debug-Info konnte nicht geladen werden:', error);
+        showNotification('❌ Debug-Info nicht verfügbar: ' + error.message, 'error');
+    }
 }
 
 // WebRTC Peer-to-Peer Verbindungen für alle Spieler

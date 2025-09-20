@@ -143,11 +143,8 @@ socket.on('player-left', (data) => {
     }
     showNotification(`${data.removedPlayer} hat die Lobby verlassen`, 'info');
     
-    // WebRTC Verbindung schließen falls vorhanden
-    const leftPlayerId = Object.keys(peerConnections).find(id => {
-        // Finde die Verbindung des Spielers der gegangen ist
-        return true; // Vereinfachung - schließe alle nicht mehr benötigten Verbindungen später
-    });
+    // WebRTC Verbindung schließen falls vorhanden (NEUER WEBRTC MANAGER)
+    const leftPlayerId = data.removedPlayer;
     
     // Video-Slot des Spielers freigeben (falls vorhanden)
     removePlayerVideoByName(data.removedPlayer);
@@ -1556,11 +1553,11 @@ function leaveVideoCall() {
     
     showNotification('📵 Video Call verlassen', 'info');
     
-    // Alle Peer Connections schließen
-    Object.values(peerConnections).forEach(pc => {
-        pc.close();
+    // Alle Peer Connections schließen (NEUER WEBRTC MANAGER)
+    webrtc.peerConnections.forEach((peerData) => {
+        peerData.connection.close();
     });
-    peerConnections = {};
+    webrtc.peerConnections.clear();
     myVideoSlot = null;
     
     // Anderen mitteilen
@@ -1577,7 +1574,7 @@ function updateCallUI() {
     const videoBtn = document.getElementById('toggle-video');
     const leaveBtn = document.getElementById('leave-call');
     
-    if (isInCall) {
+    if (webrtc.isInCall) {
         joinBtn.style.display = 'none';
         audioBtn.disabled = false;
         videoBtn.disabled = false;
@@ -1670,13 +1667,16 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
 
 document.getElementById('home-btn').addEventListener('click', () => {
     // Video Call verlassen falls aktiv
-    if (isInCall) {
+    if (webrtc.isInCall) {
         leaveVideoCall();
     }
     
     // Alle Peer Connections schließen
-    Object.values(peerConnections).forEach(pc => pc.close());
-    peerConnections = {};
+    // Alle WebRTC Verbindungen schließen (NEUER WEBRTC MANAGER)
+    webrtc.peerConnections.forEach((peerData) => {
+        peerData.connection.close();
+    });
+    webrtc.peerConnections.clear();
     
     // Zum Hauptmenü zurückkehren
     socket.disconnect();
@@ -1778,17 +1778,17 @@ function updateLobbyCallUI() {
     const leaveBtn = document.getElementById('leave-video-call-lobby');
     
     if (lobbyStatus && lobbyParticipants) {
-        const participantCount = Object.keys(peerConnections).length + (isInCall ? 1 : 0);
+        const participantCount = webrtc.peerConnections.size + (webrtc.isInCall ? 1 : 0);
         lobbyParticipants.textContent = `${participantCount}/5 Teilnehmer`;
         
         const indicator = lobbyStatus.querySelector('.status-indicator');
         if (indicator) {
-            indicator.textContent = isInCall ? '🟢' : '🔴';
+            indicator.textContent = webrtc.isInCall ? '🟢' : '🔴';
         }
     }
     
     if (joinBtn && leaveBtn) {
-        if (isInCall) {
+        if (webrtc.isInCall) {
             joinBtn.style.display = 'none';
             leaveBtn.style.display = 'block';
         } else {

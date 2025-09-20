@@ -494,15 +494,22 @@ class WebRTCManager {
     }
 
     async initializeLocalStream(retryOptions = {}) {
+        console.log('🎥 Initialisiere lokalen Stream...', retryOptions);
+        
         const strategies = [
             // Strategie 1: Spezifische Device ID (für Elgato Cam Link etc.)
             ...(retryOptions.deviceId ? [{
                 video: { 
                     deviceId: { exact: retryOptions.deviceId },
-                    width: { ideal: 1920, max: 1920 }, 
-                    height: { ideal: 1080, max: 1080 }
+                    width: { ideal: 1920, min: 640 }, 
+                    height: { ideal: 1080, min: 480 },
+                    frameRate: { ideal: 30, min: 15 }
                 },
-                audio: true,
+                audio: {
+                    echoCancellation: false,  // Für Capture-Devices oft besser
+                    noiseSuppression: false,
+                    autoGainControl: false
+                },
                 name: `Capture Device: ${retryOptions.deviceLabel || 'Unbekannt'}`
             }] : []),
             // Strategie 2: Optimale Qualität (normale Webcams)
@@ -559,9 +566,32 @@ class WebRTCManager {
                 
                 this.localStream = await navigator.mediaDevices.getUserMedia(strategies[i]);
                 
-                console.log(`✅ Lokaler Stream erfolgreich erstellt mit: ${strategies[i].name}`);
+                // Detaillierte Stream-Info loggen
+                const videoTracks = this.localStream.getVideoTracks();
+                const audioTracks = this.localStream.getAudioTracks();
                 
-                if (!strategies[i].video) {
+                console.log(`✅ Lokaler Stream erfolgreich erstellt mit: ${strategies[i].name}`);
+                console.log(`📹 Video Tracks: ${videoTracks.length}`);
+                console.log(`🎤 Audio Tracks: ${audioTracks.length}`);
+                
+                if (videoTracks.length > 0) {
+                    const videoTrack = videoTracks[0];
+                    const settings = videoTrack.getSettings();
+                    const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                    
+                    console.log('📊 Video Track Details:');
+                    console.log('  - Label:', videoTrack.label);
+                    console.log('  - Enabled:', videoTrack.enabled);
+                    console.log('  - Ready State:', videoTrack.readyState);
+                    console.log('  - Settings:', settings);
+                    
+                    // Spezielle Meldung für Capture-Devices
+                    if (videoTrack.label.toLowerCase().includes('cam link') || 
+                        videoTrack.label.toLowerCase().includes('elgato')) {
+                        console.log('🎥 ELGATO CAM LINK ERKANNT!');
+                        showNotification(`🎥 Elgato Cam Link aktiv: ${settings.width}x${settings.height}@${settings.frameRate}fps`, 'success');
+                    }
+                } else {
                     showNotification('⚠️ Nur Audio verfügbar - keine Kamera gefunden', 'warning');
                 }
                 
@@ -610,31 +640,89 @@ class WebRTCManager {
             }
         };
 
-        // Connection State Handler
+        // Connection State Handler (erweitert)
         peerConnection.onconnectionstatechange = () => {
-            console.log(`🔗 Verbindung zu ${peerName}: ${peerConnection.connectionState}`);
+            console.log(`🔗 Peer Connection zu ${peerName}: ${peerConnection.connectionState}`);
             
             if (peerConnection.connectionState === 'connected') {
+                console.log(`✅ Peer ${peerName} erfolgreich verbunden!`);
                 showNotification(`✅ Verbunden mit ${peerName}`, 'success');
             } else if (peerConnection.connectionState === 'failed') {
-                showNotification(`❌ Verbindung zu ${peerName} fehlgeschlagen`, 'error');
+                console.error(`❌ Peer Connection zu ${peerName} fehlgeschlagen!`);
+                showNotification(`❌ Verbindung zu ${peerName} fehlgeschlagen - Versuche Reconnect`, 'error');
+                // Automatischer Reconnect-Versuch
+                setTimeout(() => {
+                    console.log(`🔄 Versuche Reconnect zu ${peerName}...`);
+                    this.reconnectToPeer(peerId, peerName);
+                }, 2000);
+            } else if (peerConnection.connectionState === 'disconnected') {
+                console.warn(`⚠️ Peer ${peerName} getrennt`);
+                showNotification(`⚠️ ${peerName} getrennt`, 'warning');
             }
+        };
+        
+        // ICE Connection State Handler (zusätzlich)
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log(`🧊 ICE Connection zu ${peerName}: ${peerConnection.iceConnectionState}`);
+            
+            if (peerConnection.iceConnectionState === 'failed') {
+                console.error(`❌ ICE Connection zu ${peerName} fehlgeschlagen!`);
+                showNotification(`❌ ICE Verbindung zu ${peerName} fehlgeschlagen`, 'error');
+            } else if (peerConnection.iceConnectionState === 'connected') {
+                console.log(`✅ ICE zu ${peerName} erfolgreich!`);
+            } else if (peerConnection.iceConnectionState === 'disconnected') {
+                console.warn(`⚠️ ICE zu ${peerName} getrennt`);
+            }
+        };
+        
+        // Gathering State Handler
+        peerConnection.onicegatheringstatechange = () => {
+            console.log(`📊 ICE Gathering zu ${peerName}: ${peerConnection.iceGatheringState}`);
         };
 
         this.peerConnections.set(peerId, { connection: peerConnection, name: peerName });
         return peerConnection;
     }
 
+    // Reconnect zu einem Peer versuchen
+    async reconnectToPeer(peerId, peerName) {
+        console.log(`🔄 Versuche Reconnect zu ${peerName}...`);
+        
+        // Alte Connection entfernen
+        if (this.peerConnections.has(peerId)) {
+            const oldPeerData = this.peerConnections.get(peerId);
+            oldPeerData.connection.close();
+            this.peerConnections.delete(peerId);
+        }
+        
+        // Neue Connection erstellen
+        this.createPeerConnection(peerId, peerName);
+        
+        // Neuen Offer senden
+        await this.createOffer(peerId);
+    }
+
     displayRemoteVideo(peerId, peerName, stream) {
-        console.log(`🖥️ Zeige Remote Video für: ${peerName}`);
+        console.log(`🖥️ Zeige Remote Video für: ${peerName} (${peerId})`);
+        
+        if (!stream) {
+            console.error(`❌ Kein Stream für Remote Video von ${peerName}!`);
+            return;
+        }
+        
+        // Stream-Details loggen
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        console.log(`📊 Remote Stream von ${peerName}: ${videoTracks.length} Video, ${audioTracks.length} Audio`);
         
         // ERSTE: Prüfen ob bereits ein Video für diesen Peer existiert
         const existingSlot = document.querySelector(`[data-peer-id="${peerId}"]`);
         if (existingSlot) {
             console.log(`⚠️ Video für ${peerName} existiert bereits - aktualisiere Stream`);
-            const video = existingSlot.querySelector('.player-video');
+            const video = existingSlot.querySelector('.player-video, .mini-video');
             if (video) {
                 video.srcObject = stream;
+                console.log(`✅ Remote Video für ${peerName} aktualisiert`);
             }
             return;
         }
@@ -663,7 +751,18 @@ class WebRTCManager {
                     label.textContent = peerName;
                 }
                 
-                console.log(`✅ Remote Video angezeigt für: ${peerName}`);
+                // Video Load Event für Remote Videos
+                video.addEventListener('loadedmetadata', () => {
+                    console.log(`✅ Remote Video Metadata geladen für ${peerName}: ${video.videoWidth}x${video.videoHeight}`);
+                    showNotification(`📺 Video von ${peerName} empfangen`, 'success');
+                });
+                
+                video.addEventListener('error', (e) => {
+                    console.error(`❌ Remote Video Fehler für ${peerName}:`, e);
+                    showNotification(`❌ Video-Problem mit ${peerName}`, 'error');
+                });
+                
+                console.log(`✅ Remote Video konfiguriert für: ${peerName} in Slot: ${videoSlot.id || 'unknown'}`);
             }
         } else {
             console.warn(`⚠️ Kein verfügbarer Video-Slot für: ${peerName}`);
@@ -671,19 +770,38 @@ class WebRTCManager {
     }
 
     findAvailableVideoSlot() {
+        console.log('🔍 Suche verfügbaren Video-Slot...');
+        
         // Prüfe welcher Screen aktiv ist und verwende die entsprechenden Video-Slots
         let selector = '';
         
         if (screens.game.classList.contains('active')) {
             // Im Game-Screen: Verwende große Player-Video-Slots
             selector = '#game-screen .player-video-slot:not(.active):not([data-is-local="true"]):not([data-peer-id])';
+            console.log('📍 Game-Screen aktiv - suche Player-Video-Slot');
         } else {
             // Im Lobby-Screen: Verwende Mini-Video-Slots
+            console.log('📍 Lobby-Screen aktiv - suche Mini-Video-Slot');
             selector = '#lobby-screen .mini-video-slot:not(.active):not([data-is-local="true"]):not([data-peer-id])';
         }
         
+        console.log(`🔍 Selector: ${selector}`);
         const slots = document.querySelectorAll(selector);
-        return slots.length > 0 ? slots[0] : null;
+        console.log(`📊 Gefundene verfügbare Slots: ${slots.length}`);
+        
+        if (slots.length > 0) {
+            console.log(`✅ Verwende Slot: ${slots[0].id || 'unnamed'}`);
+            return slots[0];
+        } else {
+            console.warn('⚠️ Kein verfügbarer Video-Slot gefunden!');
+            // Debug: Zeige alle vorhandenen Slots
+            const allSlots = document.querySelectorAll('.player-video-slot, .mini-video-slot');
+            console.log(`📋 Alle Video-Slots (${allSlots.length}):`);
+            allSlots.forEach((slot, index) => {
+                console.log(`  ${index + 1}. ${slot.id || 'unnamed'} - active: ${slot.classList.contains('active')}, local: ${slot.getAttribute('data-is-local')}, peer: ${slot.getAttribute('data-peer-id')}`);
+            });
+            return null;
+        }
     }
 
     async createOffer(peerId) {
@@ -784,6 +902,29 @@ const webrtc = new WebRTCManager();
 
 function initializeWebRTC() {
     console.log('🔄 WebRTC initialisiert für Lobby:', currentLobbyCode);
+    
+    // Starte regelmäßige Connection-Diagnose
+    startConnectionMonitoring();
+}
+
+// Regelmäßige Überwachung der Peer-Connections
+function startConnectionMonitoring() {
+    setInterval(() => {
+        if (webrtc.peerConnections.size > 0) {
+            console.log('🔍 Connection Status Check:');
+            webrtc.peerConnections.forEach((peerData, peerId) => {
+                const conn = peerData.connection;
+                console.log(`  - ${peerData.name}: Connection=${conn.connectionState}, ICE=${conn.iceConnectionState}, Gathering=${conn.iceGatheringState}`);
+                
+                // Warnung bei problematischen States
+                if (conn.connectionState === 'failed' || conn.iceConnectionState === 'failed') {
+                    console.warn(`⚠️ Problematische Connection zu ${peerData.name}!`);
+                } else if (conn.connectionState === 'disconnected') {
+                    console.warn(`⚠️ ${peerData.name} getrennt!`);
+                }
+            });
+        }
+    }, 10000); // Alle 10 Sekunden
 }
 
 function setupVideoCallControls() {
@@ -1504,6 +1645,19 @@ ${!webrtcSupport.getUserMedia ? '❌ Browser unterstützt keine Webcam-Funktione
             });
         };
         
+        // WebRTC Connection Status Button hinzufügen
+        if (webrtc.peerConnections.size > 0) {
+            const webrtcStatusBtn = document.createElement('button');
+            webrtcStatusBtn.textContent = '🔗 WebRTC Status';
+            webrtcStatusBtn.style.cssText = 'margin: 5px; padding: 10px 15px; background: #fd7e14; color: white; border: none; border-radius: 5px; cursor: pointer;';
+            webrtcStatusBtn.onclick = () => {
+                document.body.removeChild(debugModal);
+                showWebRTCConnectionStatus();
+            };
+            
+            debugModal.querySelector('div > div:last-child').appendChild(webrtcStatusBtn);
+        }
+        
         // Schließen bei Klick außerhalb
         debugModal.onclick = (e) => {
             if (e.target === debugModal) {
@@ -1515,6 +1669,196 @@ ${!webrtcSupport.getUserMedia ? '❌ Browser unterstützt keine Webcam-Funktione
         console.error('❌ Debug-Info konnte nicht geladen werden:', error);
         showNotification('❌ Debug-Info nicht verfügbar: ' + error.message, 'error');
     }
+}
+
+// Detaillierte WebRTC Connection Status Anzeige
+async function showWebRTCConnectionStatus() {
+    console.log('🔗 Zeige detaillierte WebRTC Connection Status...');
+    
+    let connectionInfo = `
+🔗 WEBRTC CONNECTION STATUS
+===========================
+
+📊 ÜBERSICHT:
+- Aktive Peer-Connections: ${webrtc.peerConnections.size}
+- Eigener Stream aktiv: ${webrtc.localStream ? '✅' : '❌'}
+- In Call: ${webrtc.isInCall ? '✅' : '❌'}
+
+`;
+
+    if (webrtc.peerConnections.size === 0) {
+        connectionInfo += `
+⚠️ KEINE AKTIVEN PEER-CONNECTIONS
+- Sind andere Spieler im Video-Call?
+- Versuchen Sie "Video Call beitreten" zu klicken
+- Prüfen Sie die Netzwerk-Verbindung
+`;
+    } else {
+        connectionInfo += `
+📡 PEER-CONNECTIONS:
+`;
+        
+        webrtc.peerConnections.forEach((peerData, peerId) => {
+            const conn = peerData.connection;
+            
+            // ICE Candidates zählen
+            let localCandidatesCount = 0;
+            let remoteCandidatesCount = 0;
+            
+            try {
+                conn.getStats().then(stats => {
+                    stats.forEach(report => {
+                        if (report.type === 'local-candidate') localCandidatesCount++;
+                        if (report.type === 'remote-candidate') remoteCandidatesCount++;
+                    });
+                });
+            } catch (e) {
+                // Stats nicht verfügbar
+            }
+            
+            const connectionOK = conn.connectionState === 'connected';
+            const iceOK = conn.iceConnectionState === 'connected' || conn.iceConnectionState === 'completed';
+            
+            connectionInfo += `
+  🤝 ${peerData.name} (${peerId.substr(0, 8)}...)
+    - Connection State: ${conn.connectionState} ${connectionOK ? '✅' : '❌'}
+    - ICE Connection State: ${conn.iceConnectionState} ${iceOK ? '✅' : '❌'}
+    - ICE Gathering State: ${conn.iceGatheringState}
+    - Signaling State: ${conn.signalingState}
+    - Local ICE Candidates: ${localCandidatesCount}
+    - Remote ICE Candidates: ${remoteCandidatesCount}
+`;
+
+            // Remote Streams prüfen
+            const remoteStreams = conn.getRemoteStreams ? conn.getRemoteStreams() : [];
+            if (remoteStreams.length > 0) {
+                connectionInfo += `    - Remote Streams: ${remoteStreams.length} ✅\n`;
+                remoteStreams.forEach((stream, i) => {
+                    connectionInfo += `      Stream ${i + 1}: ${stream.getVideoTracks().length} Video, ${stream.getAudioTracks().length} Audio\n`;
+                });
+            } else {
+                connectionInfo += `    - Remote Streams: 0 ❌\n`;
+            }
+        });
+    }
+    
+    connectionInfo += `
+🎥 LOKALER STREAM:
+`;
+    
+    if (webrtc.localStream) {
+        const videoTracks = webrtc.localStream.getVideoTracks();
+        const audioTracks = webrtc.localStream.getAudioTracks();
+        
+        connectionInfo += `
+- Video Tracks: ${videoTracks.length}
+- Audio Tracks: ${audioTracks.length}
+`;
+        
+        if (videoTracks.length > 0) {
+            const vTrack = videoTracks[0];
+            const settings = vTrack.getSettings();
+            connectionInfo += `
+  Video Track 1:
+    - Label: ${vTrack.label}
+    - Enabled: ${vTrack.enabled ? '✅' : '❌'}
+    - Ready State: ${vTrack.readyState}
+    - Resolution: ${settings.width || '?'}x${settings.height || '?'}
+    - Frame Rate: ${settings.frameRate || '?'}fps
+    - Device ID: ${settings.deviceId || '?'}
+`;
+        }
+    } else {
+        connectionInfo += `- Kein lokaler Stream verfügbar ❌`;
+    }
+    
+    connectionInfo += `
+🔧 LÖSUNGSVORSCHLÄGE:
+- Bei "failed" Connections: Browser neu laden
+- Bei "disconnected" Connections: Video Call neu beitreten
+- Bei fehlenden Remote Streams: Andere Spieler bitten Video neu zu starten
+- Bei lokalen Stream-Problemen: "Alternative Geräte suchen" verwenden
+`;
+
+    // Modal für Connection Status
+    const statusModal = document.createElement('div');
+    statusModal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.9); color: white; padding: 20px; 
+        z-index: 10000; overflow-y: auto; font-family: monospace; font-size: 11px;
+    `;
+    
+    statusModal.innerHTML = `
+        <div style="max-width: 900px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">🔗 WebRTC Connection Status</h2>
+                <button id="close-webrtc-status" style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    ❌ Schließen
+                </button>
+            </div>
+            <pre style="white-space: pre-wrap; background: #111; padding: 20px; border-radius: 8px; max-height: 70vh; overflow-y: auto;">${connectionInfo}</pre>
+            <div style="margin-top: 20px; text-align: center;">
+                <button id="refresh-webrtc-status" style="margin: 5px; padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    🔄 Status aktualisieren
+                </button>
+                <button id="force-reconnect-all" style="margin: 5px; padding: 10px 15px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    🔁 Alle Verbindungen neu aufbauen
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(statusModal);
+    
+    // Event Handlers
+    document.getElementById('close-webrtc-status').onclick = () => {
+        document.body.removeChild(statusModal);
+    };
+    
+    document.getElementById('refresh-webrtc-status').onclick = () => {
+        document.body.removeChild(statusModal);
+        showWebRTCConnectionStatus(); // Neu laden
+    };
+    
+    document.getElementById('force-reconnect-all').onclick = () => {
+        document.body.removeChild(statusModal);
+        forceReconnectAllPeers();
+    };
+    
+    // Schließen bei Klick außerhalb
+    statusModal.onclick = (e) => {
+        if (e.target === statusModal) {
+            document.body.removeChild(statusModal);
+        }
+    };
+}
+
+// Alle Peer-Connections neu aufbauen
+async function forceReconnectAllPeers() {
+    console.log('🔁 Baue alle Peer-Connections neu auf...');
+    showNotification('🔁 Baue alle Verbindungen neu auf...', 'info');
+    
+    const peersToReconnect = Array.from(webrtc.peerConnections.entries());
+    
+    // Alle alten Connections schließen
+    webrtc.peerConnections.forEach((peerData) => {
+        peerData.connection.close();
+    });
+    webrtc.peerConnections.clear();
+    
+    // Nach kurzer Pause neue Connections aufbauen
+    setTimeout(async () => {
+        for (const [peerId, peerData] of peersToReconnect) {
+            console.log(`🔄 Reconnect zu ${peerData.name}...`);
+            webrtc.createPeerConnection(peerId, peerData.name);
+            await webrtc.createOffer(peerId);
+            
+            // Kurze Pause zwischen Reconnects
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        showNotification('✅ Alle Verbindungen neu aufgebaut', 'success');
+    }, 2000);
 }
 
 // WebRTC Peer-to-Peer Verbindungen für alle Spieler
@@ -1565,6 +1909,29 @@ function getPlayerNameById(playerId) {
 
 function displayMyVideo(stream) {
     console.log('🖥️ Zeige eigenes Video einmalig...');
+    
+    if (!stream) {
+        console.error('❌ Kein Stream für displayMyVideo vorhanden!');
+        showNotification('❌ Video-Stream nicht verfügbar', 'error');
+        return;
+    }
+    
+    // Stream-Details loggen
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    
+    console.log(`📊 displayMyVideo - Stream hat ${videoTracks.length} Video-Track(s) und ${audioTracks.length} Audio-Track(s)`);
+    
+    if (videoTracks.length > 0) {
+        const videoTrack = videoTracks[0];
+        console.log(`📹 Video Track: ${videoTrack.label} (${videoTrack.readyState})`);
+        
+        if (videoTrack.readyState === 'ended') {
+            console.error('❌ Video Track ist beendet!');
+            showNotification('❌ Video-Stream wurde beendet', 'error');
+            return;
+        }
+    }
     
     // Erst alle existierenden eigenen Videos entfernen
     clearMyExistingVideos();
@@ -1657,40 +2024,68 @@ function clearAllRemoteVideos() {
 }
 
 function displayMyVideoInGame(stream) {
+    console.log('🎮 displayMyVideoInGame wird ausgeführt...');
+    
     const playerSlot = isAdmin ? 
         document.getElementById('admin-video') : 
         getAvailableVideoSlot();
     
-    if (playerSlot) {
-        myVideoSlot = playerSlot;
-        const video = playerSlot.querySelector('.player-video');
-        const placeholder = playerSlot.querySelector('.video-placeholder');
-        
-        video.srcObject = stream;
-        video.muted = true; // Eigenes Video stumm schalten
-        video.autoplay = true;
-        video.playsInline = true;
-        video.style.display = 'block';
-        placeholder.style.display = 'none';
-        
-        playerSlot.classList.add('active');
-        if (isAdmin) playerSlot.classList.add('admin');
-        
-        // Player Name aktualisieren
-        const label = playerSlot.querySelector('.player-label');
-        if (label) {
-            label.textContent = `${isAdmin ? currentLobby.adminName : getPlayerName()} (Du)`;
-        }
-        
-        // Video Status Overlay hinzufügen
-        addVideoStatusOverlay(playerSlot);
-        
-        // Markiere als eigenes Video
-        playerSlot.setAttribute('data-player-id', socket.id);
-        playerSlot.setAttribute('data-is-local', 'true');
-        
-        console.log('✅ Eigenes Video angezeigt in Game-Slot:', playerSlot.id);
+    if (!playerSlot) {
+        console.error('❌ Kein verfügbarer Video-Slot im Game-Screen gefunden!');
+        showNotification('❌ Kein Video-Slot verfügbar', 'error');
+        return;
     }
+    
+    myVideoSlot = playerSlot;
+    const video = playerSlot.querySelector('.player-video');
+    const placeholder = playerSlot.querySelector('.video-placeholder');
+    
+    if (!video) {
+        console.error('❌ Video-Element nicht gefunden in Slot:', playerSlot.id);
+        return;
+    }
+    
+    console.log(`📹 Setze Stream auf Video-Element in Slot: ${playerSlot.id}`);
+    
+    video.srcObject = stream;
+    video.muted = true; // Eigenes Video stumm schalten
+    video.autoplay = true;
+    video.playsInline = true;
+    video.style.display = 'block';
+    
+    if (placeholder) {
+        placeholder.style.display = 'none';
+    }
+    
+    playerSlot.classList.add('active');
+    if (isAdmin) playerSlot.classList.add('admin');
+    
+    // Player Name aktualisieren
+    const label = playerSlot.querySelector('.player-label');
+    if (label) {
+        label.textContent = `${isAdmin ? currentLobby.adminName : getPlayerName()} (Du)`;
+        console.log(`👤 Player Label gesetzt: ${label.textContent}`);
+    }
+    
+    // Video Status Overlay hinzufügen
+    addVideoStatusOverlay(playerSlot);
+    
+    // Markiere als eigenes Video
+    playerSlot.setAttribute('data-player-id', socket.id);
+    playerSlot.setAttribute('data-is-local', 'true');
+    
+    // Video Load Event Listener
+    video.addEventListener('loadedmetadata', () => {
+        console.log(`✅ Video Metadata geladen: ${video.videoWidth}x${video.videoHeight}`);
+        showNotification(`📹 Eigenes Video aktiv: ${video.videoWidth}x${video.videoHeight}`, 'success');
+    });
+    
+    video.addEventListener('error', (e) => {
+        console.error('❌ Video-Element Fehler:', e);
+        showNotification('❌ Video-Anzeige-Fehler', 'error');
+    });
+    
+    console.log('✅ Eigenes Video konfiguriert in Game-Slot:', playerSlot.id);
 }
 
 function displayMyVideoInLobby(stream) {

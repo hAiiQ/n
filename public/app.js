@@ -169,6 +169,11 @@ socket.on('game-started', (lobby) => {
     
     // Video-Call Integration vorbereiten
     setupVideoCallIntegration();
+    
+    // Wenn bereits im Video Call, übertrage Videos von Lobby zu Game
+    if (webrtc.isInCall) {
+        transferVideosToGameScreen();
+    }
 });
 
 socket.on('question-selected', (data) => {
@@ -565,7 +570,18 @@ class WebRTCManager {
     }
 
     findAvailableVideoSlot() {
-        const slots = document.querySelectorAll('.player-video-slot:not(.active)');
+        // Prüfe welcher Screen aktiv ist und verwende nur die Video-Slots dieses Screens
+        let selectorPrefix = '';
+        
+        if (screens.game.classList.contains('active')) {
+            // Wenn im Game-Screen, verwende nur Game Video-Slots
+            selectorPrefix = '#game-screen ';
+        } else {
+            // Sonst verwende Lobby Video-Slots (Mini-Videos)
+            return null; // In der Lobby verwenden wir die Mini-Video-Slots nicht für Remote Videos
+        }
+        
+        const slots = document.querySelectorAll(`${selectorPrefix}.player-video-slot:not(.active):not([data-is-local="true"])`);
         return slots.length > 0 ? slots[0] : null;
     }
 
@@ -988,48 +1004,7 @@ async function initiateConnection(targetId) {
     }
 }
 
-function displayRemoteVideo(stream, playerId, playerName) {
-    // Freien Video-Slot finden (nicht den eigenen)
-    const availableSlots = document.querySelectorAll('.player-video-slot:not(.active)');
-    
-    let targetSlot = null;
-    
-    // Prüfe ob Admin-Slot verfügbar ist (wenn Remote-Player Admin ist)
-    if (playerId === currentLobby.admin && !document.getElementById('admin-video').classList.contains('active')) {
-        targetSlot = document.getElementById('admin-video');
-        targetSlot.classList.add('admin');
-    } else if (availableSlots.length > 0) {
-        targetSlot = availableSlots[0];
-    }
-    
-    if (targetSlot) {
-        const video = targetSlot.querySelector('.player-video');
-        const placeholder = targetSlot.querySelector('.video-placeholder');
-        
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.muted = false; // Remote Videos nicht stumm
-        video.style.display = 'block';
-        placeholder.style.display = 'none';
-        
-        targetSlot.classList.add('active');
-        targetSlot.setAttribute('data-player-id', playerId);
-        
-        // Player Name aktualisieren
-        const label = targetSlot.querySelector('.player-label');
-        if (label) {
-            label.textContent = playerName;
-        }
-        
-        // Remote Video Status Overlay
-        addRemoteVideoStatusOverlay(targetSlot, playerId);
-        
-        console.log(`Remote Video angezeigt für ${playerName}`);
-        updateCallStatus();
-    } else {
-        console.warn('Kein freier Video-Slot für', playerName);
-    }
-}
+// Alte displayRemoteVideo Funktion entfernt - WebRTC-Manager übernimmt das
 
 function addRemoteVideoStatusOverlay(playerSlot, playerId) {
     const overlay = document.createElement('div');
@@ -1144,11 +1119,20 @@ function getPlayerNameById(playerId) {
 }
 
 function displayMyVideo(stream) {
-    console.log('🖥️ Zeige eigenes Video...');
+    console.log('🖥️ Zeige eigenes Video an korrekter Stelle...');
     
-    // Zeige Video sowohl in Lobby als auch im Spiel an
-    displayMyVideoInGame(stream);
-    displayMyVideoInLobby(stream);
+    // Zeige Video nur dort wo es hingehört, basierend auf aktivem Screen
+    if (screens.lobby.classList.contains('active')) {
+        console.log('📍 Lobby aktiv - zeige Video in Lobby-Vorschau');
+        displayMyVideoInLobby(stream);
+    } else if (screens.game.classList.contains('active')) {
+        console.log('📍 Game aktiv - zeige Video im Game-Screen');
+        displayMyVideoInGame(stream);
+    } else {
+        // Fallback: Wenn unsicher, zeige nur in Lobby
+        console.log('📍 Fallback - zeige Video in Lobby');
+        displayMyVideoInLobby(stream);
+    }
 }
 
 function displayMyVideoInGame(stream) {
@@ -1563,6 +1547,32 @@ function removePlayerVideo(playerId) {
 
 function getPlayerName() {
     return document.getElementById('player-name').value || 'Spieler';
+}
+
+function transferVideosToGameScreen() {
+    console.log('🔄 Übertrage Videos von Lobby zu Game-Screen...');
+    
+    // Eigenes Video übertragen
+    if (webrtc.localStream) {
+        // Lobby Video zurücksetzen
+        resetLobbyVideo();
+        
+        // Eigenes Video im Game-Screen anzeigen
+        displayMyVideoInGame(webrtc.localStream);
+    }
+    
+    // Remote Videos übertragen
+    webrtc.peerConnections.forEach((peerData, peerId) => {
+        const connection = peerData.connection;
+        
+        // Hole Remote Stream aus der Peer Connection
+        const remoteStreams = connection.getRemoteStreams ? connection.getRemoteStreams() : [];
+        
+        if (remoteStreams.length > 0) {
+            console.log(`🔄 Übertrage Remote Video von: ${peerData.name}`);
+            webrtc.displayRemoteVideo(peerId, peerData.name, remoteStreams[0]);
+        }
+    });
 }
 
 function updateLobbyCallUI() {

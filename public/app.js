@@ -551,7 +551,18 @@ class WebRTCManager {
     displayRemoteVideo(peerId, peerName, stream) {
         console.log(`🖥️ Zeige Remote Video für: ${peerName}`);
         
-        // Finde verfügbaren Video-Slot
+        // ERSTE: Prüfen ob bereits ein Video für diesen Peer existiert
+        const existingSlot = document.querySelector(`[data-peer-id="${peerId}"]`);
+        if (existingSlot) {
+            console.log(`⚠️ Video für ${peerName} existiert bereits - aktualisiere Stream`);
+            const video = existingSlot.querySelector('.player-video');
+            if (video) {
+                video.srcObject = stream;
+            }
+            return;
+        }
+        
+        // ZWEITE: Finde verfügbaren Video-Slot
         const videoSlot = this.findAvailableVideoSlot();
         
         if (videoSlot) {
@@ -614,6 +625,76 @@ class WebRTCManager {
             console.log(`📤 Offer gesendet an: ${peerData.name}`);
         } catch (error) {
             console.error('❌ Fehler beim Erstellen des Offers:', error);
+        }
+    }
+
+    async handleOffer(data) {
+        console.log('📨 Offer empfangen von:', data.from);
+        const { from, offer } = data;
+        
+        // Peer Connection erstellen falls noch nicht vorhanden
+        if (!this.peerConnections.has(from)) {
+            const playerName = getPlayerNameById(from);
+            console.log(`🔗 Erstelle Peer Connection für eingehenden Offer von: ${playerName}`);
+            this.createPeerConnection(from, playerName);
+        }
+        
+        const peerData = this.peerConnections.get(from);
+        const peerConnection = peerData.connection;
+        
+        try {
+            console.log('📝 Setze Remote Description (Offer)...');
+            await peerConnection.setRemoteDescription(offer);
+            
+            console.log('💬 Erstelle Answer...');
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            console.log('📤 Sende Answer zurück an:', peerData.name);
+            socket.emit('webrtc-answer', {
+                target: from,
+                answer: answer,
+                lobbyCode: currentLobbyCode
+            });
+        } catch (error) {
+            console.error('❌ Fehler bei Offer-Verarbeitung:', error);
+        }
+    }
+
+    async handleAnswer(data) {
+        console.log('📨 Answer empfangen von:', data.from);
+        const { from, answer } = data;
+        
+        const peerData = this.peerConnections.get(from);
+        
+        if (peerData) {
+            try {
+                console.log('📝 Setze Remote Description (Answer)...');
+                await peerData.connection.setRemoteDescription(answer);
+                console.log('✅ Answer verarbeitet für:', peerData.name);
+            } catch (error) {
+                console.error('❌ Fehler bei Answer-Verarbeitung:', error);
+            }
+        } else {
+            console.error('❌ Keine Peer Connection gefunden für Answer von:', from);
+        }
+    }
+
+    async handleIceCandidate(data) {
+        console.log('🧊 ICE Candidate empfangen von:', data.from);
+        const { from, candidate } = data;
+        
+        const peerData = this.peerConnections.get(from);
+        
+        if (peerData) {
+            try {
+                await peerData.connection.addIceCandidate(candidate);
+                console.log('✅ ICE Candidate hinzugefügt für:', peerData.name);
+            } catch (error) {
+                console.error('❌ Fehler bei ICE-Candidate:', error);
+            }
+        } else {
+            console.error('❌ Keine Peer Connection gefunden für ICE Candidate von:', from);
         }
     }
 }
@@ -707,9 +788,6 @@ async function joinVideoCall() {
         updateLobbyCallUI();
         
         // 4. Audio/Video-Buttons aktivieren
-        enableMediaControls();
-        
-        // 4. Media-Controls aktivieren
         enableMediaControls();
         
         // 5. Anderen Spielern Beitritt mitteilen
@@ -947,6 +1025,7 @@ function clearMyExistingVideos() {
     myVideoSlots.forEach(slot => {
         const video = slot.querySelector('.player-video, .mini-video');
         const placeholder = slot.querySelector('.video-placeholder');
+        const overlay = slot.querySelector('.video-overlay');
         
         if (video) {
             video.srcObject = null;
@@ -957,13 +1036,61 @@ function clearMyExistingVideos() {
             placeholder.style.display = 'flex';
         }
         
+        if (overlay) {
+            overlay.remove();
+        }
+        
         slot.classList.remove('active');
         slot.removeAttribute('data-is-local');
         slot.removeAttribute('data-player-id');
+        slot.removeAttribute('data-peer-id');
+        
+        const label = slot.querySelector('.player-label');
+        if (label) {
+            label.textContent = '';
+        }
     });
+    
+    console.log(`🧹 ${myVideoSlots.length} eigene Video-Slots bereinigt`);
     
     // Reset globale Variable
     myVideoSlot = null;
+}
+
+function clearAllRemoteVideos() {
+    console.log('🧹 Entferne alle Remote-Videos...');
+    
+    // Alle Remote-Video-Slots finden und zurücksetzen
+    const remoteVideoSlots = document.querySelectorAll('.player-video-slot[data-peer-id]');
+    
+    remoteVideoSlots.forEach(slot => {
+        const video = slot.querySelector('.player-video');
+        const placeholder = slot.querySelector('.video-placeholder');
+        const overlay = slot.querySelector('.video-overlay');
+        
+        if (video) {
+            video.srcObject = null;
+            video.style.display = 'none';
+        }
+        
+        if (placeholder) {
+            placeholder.style.display = 'flex';
+        }
+        
+        if (overlay) {
+            overlay.remove();
+        }
+        
+        slot.classList.remove('active');
+        slot.removeAttribute('data-peer-id');
+        
+        const label = slot.querySelector('.player-label');
+        if (label) {
+            label.textContent = 'Wartet auf Beitritt...';
+        }
+    });
+    
+    console.log(`🧹 ${remoteVideoSlots.length} Remote-Video-Slots bereinigt`);
 }
 
 function displayMyVideoInGame(stream) {
@@ -1153,14 +1280,20 @@ function toggleVideo() {
 
 function updateAudioButton() {
     const audioBtn = document.getElementById('toggle-audio');
-    audioBtn.className = `btn ${localAudioEnabled ? 'btn-success' : 'btn-danger'}`;
-    audioBtn.innerHTML = `<i class="icon">${localAudioEnabled ? '🎤' : '🔇'}</i> Mikro`;
+    if (audioBtn) {
+        audioBtn.className = `btn ${localAudioEnabled ? 'btn-success' : 'btn-danger'}`;
+        audioBtn.innerHTML = `<i class="icon">${localAudioEnabled ? '🎤' : '🔇'}</i> Mikro`;
+        console.log('🎤 Audio-Button aktualisiert:', localAudioEnabled ? 'An' : 'Aus');
+    }
 }
 
 function updateVideoButton() {
     const videoBtn = document.getElementById('toggle-video');
-    videoBtn.className = `btn ${localVideoEnabled ? 'btn-success' : 'btn-danger'}`;
-    videoBtn.innerHTML = `<i class="icon">${localVideoEnabled ? '📹' : '📷'}</i> Kamera`;
+    if (videoBtn) {
+        videoBtn.className = `btn ${localVideoEnabled ? 'btn-success' : 'btn-danger'}`;
+        videoBtn.innerHTML = `<i class="icon">${localVideoEnabled ? '📹' : '📷'}</i> Kamera`;
+        console.log('📹 Video-Button aktualisiert:', localVideoEnabled ? 'An' : 'Aus');
+    }
 }
 
 function updateVideoStatusOverlay() {
@@ -1486,15 +1619,15 @@ function enableMediaControls() {
     console.log('Aktiviere Media-Controls...');
     
     // Audio-Button aktivieren
-    const audioBtn = document.getElementById('toggleAudio');
+    const audioBtn = document.getElementById('toggle-audio');
     if (audioBtn) {
         audioBtn.disabled = false;
         audioBtn.style.opacity = '1';
         console.log('Audio-Button aktiviert');
     }
     
-    // Video-Button aktivieren
-    const videoBtn = document.getElementById('toggleVideo');
+    // Video-Button aktivieren  
+    const videoBtn = document.getElementById('toggle-video');
     if (videoBtn) {
         videoBtn.disabled = false;
         videoBtn.style.opacity = '1';

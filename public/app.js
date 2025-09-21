@@ -121,9 +121,9 @@ socket.on('lobby-created', (data) => {
     showScreen('lobby');
     showNotification(`Lobby ${data.lobbyCode} erstellt!`, 'success');
     
-    // Video-Call Controls nach Lobby-Erstellung initialisieren
+    // Video-Call Controls nach Lobby-Erstellung initialisieren (mit Retry-Logik)
     setTimeout(() => {
-        setupVideoCallControls();
+        setupVideoCallControlsWithRetry();
         initializeWebRTC();
     }, 200);
 });
@@ -135,9 +135,9 @@ socket.on('joined-lobby-success', (data) => {
     showScreen('lobby');
     showNotification(`Erfolgreich Lobby ${data.lobbyCode} beigetreten!`, 'success');
     
-    // Video-Call Controls nach Lobby-Beitritt initialisieren
+    // Video-Call Controls nach Lobby-Beitritt initialisieren (mit Retry-Logik)
     setTimeout(() => {
-        setupVideoCallControls();
+        setupVideoCallControlsWithRetry();
         initializeWebRTC();
     }, 200);
 });
@@ -447,20 +447,68 @@ class WebRTCManager {
 // WebRTC Manager Instance
 const webrtc = new WebRTCManager();
 
-// VIDEO CALL FUNCTIONS - VEREINFACHT
+// VIDEO CALL FUNCTIONS - VEREINFACHT mit Retry-Logik
+function setupVideoCallControlsWithRetry(retryCount = 0, maxRetries = 5) {
+    console.log(`🔄 Setup Video Call Controls Attempt ${retryCount + 1}/${maxRetries + 1}`);
+    
+    const joinLobbyBtn = document.getElementById('join-video-call-lobby');
+    
+    if (joinLobbyBtn) {
+        console.log('✅ Video Call Button gefunden - Setup erfolgreich!');
+        setupVideoCallControls();
+        return;
+    }
+    
+    if (retryCount < maxRetries) {
+        console.log(`⏱️ Button nicht gefunden, retry in ${100 * (retryCount + 1)}ms...`);
+        setTimeout(() => {
+            setupVideoCallControlsWithRetry(retryCount + 1, maxRetries);
+        }, 100 * (retryCount + 1)); // Exponential backoff
+    } else {
+        console.error('❌ Video Call Button konnte nach 5 Versuchen nicht gefunden werden!');
+        
+        // Fallback: Event Listener zu document hinzufügen für dynamisch erstellte Buttons
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'join-video-call-lobby') {
+                console.log('🎯 Video Call Button über Document Event Listener gefunden!');
+                e.preventDefault();
+                joinVideoCall().catch(error => {
+                    console.error('❌ Video Call Fehler:', error);
+                    showNotification('❌ Video Call Fehler: ' + error.message, 'error');
+                });
+            }
+        });
+        
+        console.log('🔄 Fallback Event Listener installiert');
+    }
+}
+
 function setupVideoCallControls() {
     console.log('🎛️ Richte Video Call Controls ein...');
     
-    // Video Call beitreten (Lobby)
+    // Video Call beitreten (Lobby) - mit verbessertem Debugging
     const joinLobbyBtn = document.getElementById('join-video-call-lobby');
+    console.log('📹 Lobby Button gefunden:', !!joinLobbyBtn, joinLobbyBtn);
+    
     if (joinLobbyBtn) {
+        console.log('🔗 Füge Event Listener für Video Call Button hinzu');
         joinLobbyBtn.addEventListener('click', (e) => {
+            console.log('🎬 Video Call Button geklickt!');
             e.preventDefault();
             joinVideoCall().catch(error => {
                 console.error('❌ Video Call Fehler:', error);
                 showNotification('❌ Video Call Fehler: ' + error.message, 'error');
             });
         });
+    } else {
+        console.warn('⚠️ Video Call Button nicht gefunden! Suche alle verfügbaren Buttons...');
+        // Debug: Alle verfügbaren IDs anzeigen
+        const allButtons = document.querySelectorAll('button');
+        console.log('🔍 Alle gefundenen Buttons:', Array.from(allButtons).map(btn => ({
+            id: btn.id,
+            textContent: btn.textContent?.slice(0, 30),
+            classList: Array.from(btn.classList)
+        })));
     }
 
     // Audio/Video Controls

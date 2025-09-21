@@ -270,6 +270,83 @@ socket.on('player-left-call-notification', (data) => {
     updateCallStatus();
 });
 
+// Neue Events für Video-Slot-Aktualisierung
+socket.on('refresh-video-slots', (data) => {
+    console.log('🔄 Video-Slots aktualisieren:', data);
+    showNotification(`📹 Video-Layout aktualisiert (durch ${data.triggerBy})`, 'info');
+    
+    if (webrtc && webrtc.isInCall) {
+        // Alle Video-Slots neu organisieren
+        setTimeout(() => {
+            refreshAllVideoSlots(data.participants);
+        }, 500);
+    }
+});
+
+socket.on('video-call-status-update', (data) => {
+    console.log('📊 Video Call Status Update:', data);
+    
+    // Call-Status anzeigen aktualisieren
+    const callStatus = document.getElementById('call-status');
+    if (callStatus) {
+        callStatus.textContent = `Video Call: ${data.participantCount}/5 Teilnehmer`;
+    }
+    
+    // Participant-Liste aktualisieren
+    updateCallStatus();
+});
+
+// Response auf Participant-Anfrage
+socket.on('video-participants-response', (data) => {
+    console.log('📋 Video Participants Response:', data);
+    
+    if (webrtc && webrtc.isInCall) {
+        // Force-refresh aller Video-Slots mit Server-Daten
+        setTimeout(() => {
+            refreshAllVideoSlots(data.participants);
+        }, 100);
+    }
+});
+
+// Force Connect Response
+socket.on('force-connect-response', (data) => {
+    console.log('🔧 === FORCE CONNECT RESPONSE ===', data);
+    
+    const { allParticipants, yourSocketId } = data;
+    
+    if (!webrtc || !webrtc.isInCall) {
+        console.log('❌ Nicht im Call - ignoriere Force Connect Response');
+        return;
+    }
+    
+    console.log(`🔄 Stelle Verbindungen zu ${allParticipants.length} Participants her...`);
+    
+    allParticipants.forEach(participant => {
+        if (participant.id !== yourSocketId && participant.socketId !== socket.id) {
+            console.log(`🔗 Force Connect zu: ${participant.name} (${participant.id})`);
+            
+            // Prüfe ob Peer Connection existiert
+            if (!webrtc.peerConnections.has(participant.id)) {
+                console.log(`➕ Erstelle neue Peer Connection für ${participant.name}`);
+                webrtc.createPeerConnection(participant.id, participant.name);
+            }
+            
+            // Force einen neuen Offer (nach kurzer Verzögerung)
+            setTimeout(() => {
+                if (socket.id < participant.id && webrtc.peerConnections.has(participant.id)) {
+                    console.log(`📞 Force Offer an ${participant.name}`);
+                    webrtc.createOffer(participant.id);
+                }
+            }, 500 + Math.random() * 500);
+        }
+    });
+});
+
+socket.on('someone-force-connecting', (data) => {
+    console.log(`ℹ️ ${data.requesterName} startet Force Connect...`);
+    showNotification(`🔄 ${data.requesterName} verbindet neu...`, 'info');
+});
+
 // WebRTC Signaling Events
 socket.on('webrtc-offer', (data) => {
     console.log('📥 WebRTC Offer empfangen von:', data.from);
@@ -766,6 +843,9 @@ function setupVideoCallControls() {
     if (toggleAudioBtn) toggleAudioBtn.addEventListener('click', toggleAudio);
     if (toggleVideoBtn) toggleVideoBtn.addEventListener('click', toggleVideo);
     if (leaveCallBtn) leaveCallBtn.addEventListener('click', leaveVideoCall);
+    
+    const refreshCamsBtn = document.getElementById('refresh-cams');
+    if (refreshCamsBtn) refreshCamsBtn.addEventListener('click', refreshAllCams);
 }
 
 // Video Call Funktion global verfügbar machen - VERBESSERT
@@ -820,8 +900,15 @@ window.joinVideoCall = async function joinVideoCall() {
         
         if (audioBtn) audioBtn.disabled = false;
         if (videoBtn) videoBtn.disabled = false;
-        if (leaveBtn) leaveBtn.disabled = false;
+        if (leaveBtn) { 
+            leaveBtn.disabled = false;
+            leaveBtn.style.display = 'inline-block';
+        }
         if (joinBtn) joinBtn.style.display = 'none';
+        
+        // Refresh-Button anzeigen
+        const refreshBtn = document.getElementById('refresh-cams');
+        if (refreshBtn) refreshBtn.style.display = 'inline-block';
         
         // 4. Anderen Spielern Beitritt mitteilen
         const myPlayerName = isAdmin ? currentLobby.adminName : getPlayerName();
@@ -919,9 +1006,16 @@ window.leaveVideoCall = function leaveVideoCall() {
             joinBtn.style.display = 'block';
             joinBtn.disabled = false;
         }
-        if (leaveBtn) leaveBtn.disabled = true;
+        if (leaveBtn) {
+            leaveBtn.disabled = true;
+            leaveBtn.style.display = 'none';
+        }
         if (audioBtn) audioBtn.disabled = true;
         if (videoBtn) videoBtn.disabled = true;
+        
+        // Refresh-Button verstecken
+        const refreshBtn = document.getElementById('refresh-cams');
+        if (refreshBtn) refreshBtn.style.display = 'none';
         
         showNotification('✅ Video Call verlassen', 'success');
         
@@ -1003,6 +1097,62 @@ function setupVideoCallIntegration() {
     updateCallStatus();
 }
 
+// Funktion zum manuellen Aktualisieren aller Cams - FORCE CONNECT
+window.refreshAllCams = function refreshAllCams() {
+    console.log('🔄 === FORCE CONNECT ALL GESTARTET ===');
+    
+    if (!webrtc || !webrtc.isInCall) {
+        showNotification('❌ Nicht im Video Call!', 'error');
+        return;
+    }
+    
+    showNotification('🔄 Force Connect zu allen Teilnehmern...', 'info');
+    
+    // 1. Debug aktuelle Situation
+    console.log('📊 Aktuelle WebRTC Situation:');
+    console.log('   - Mein Stream:', !!webrtc.localStream);
+    console.log('   - Peer Connections:', webrtc.peerConnections.size);
+    console.log('   - Lobby Code:', currentLobbyCode);
+    
+    // 2. Mein eigenes Video sicherstellen
+    if (webrtc.localStream) {
+        displayMyVideo(webrtc.localStream);
+    }
+    
+    // 3. Server nach ALLEN Participants fragen und dann FORCE CONNECT
+    if (currentLobbyCode) {
+        console.log('� Fordere komplette Teilnehmer-Liste vom Server...');
+        socket.emit('force-connect-all-participants', { 
+            lobbyCode: currentLobbyCode,
+            mySocketId: socket.id 
+        });
+    }
+    
+    // 4. Bestehende Connections prüfen und reparieren
+    webrtc.peerConnections.forEach((peerData, peerId) => {
+        console.log(`🔍 Prüfe Connection zu ${peerId}:`, {
+            hasConnection: !!peerData.connection,
+            connectionState: peerData.connection?.connectionState,
+            hasRemoteStream: !!peerData.remoteStream,
+            iceConnectionState: peerData.connection?.iceConnectionState
+        });
+        
+        // Falls Connection da ist aber kein Stream - neu verbinden
+        if (peerData.connection && !peerData.remoteStream) {
+            console.log(`🔧 Connection ohne Stream - erstelle neue...`);
+            setTimeout(() => {
+                if (socket.id < peerId) {
+                    console.log(`📞 Force Offer an ${peerId}`);
+                    webrtc.createOffer(peerId);
+                }
+            }, 1000);
+        }
+    });
+    
+    showNotification('✅ Force Connect abgeschlossen!', 'success');
+    setTimeout(() => debugSlotAssignment(), 1000);
+}
+
 function updateCallUI() {
     // Video-Call Bereiche anzeigen
     const lobbyVideoCall = document.querySelector('.lobby-video-call');
@@ -1052,36 +1202,90 @@ function updateVideoCallStatusDisplay(participantCount, participants) {
     }
 }
 
+// Hilfsfunktion: Bestimme feste Slot-Position basierend auf Lobby-Reihenfolge
+function getFixedSlotForPlayer(playerId) {
+    console.log(`🔍 Suche Slot für playerId: ${playerId}`);
+    console.log(`🔍 currentLobby:`, currentLobby);
+    console.log(`🔍 isAdmin: ${isAdmin}, socket.id: ${socket.id}`);
+    
+    // Einfache Fallback-Logik falls currentLobby fehlt
+    if (!currentLobby) {
+        console.warn('⚠️ Keine currentLobby verfügbar - verwende alte Logik');
+        
+        // Wenn ich Admin bin, nehme admin-video
+        if (isAdmin && playerId === socket.id) {
+            return document.getElementById('admin-video');
+        }
+        
+        // Sonst ersten freien Slot
+        const slotIds = ['admin-video', 'player1-video', 'player2-video', 'player3-video', 'player4-video'];
+        for (const slotId of slotIds) {
+            const slot = document.getElementById(slotId);
+            if (slot && (!slot.dataset.playerId || slot.dataset.playerId === playerId)) {
+                console.log(`📺 Fallback-Slot ${slotId} für ${playerId}`);
+                return slot;
+            }
+        }
+        return null;
+    }
+    
+    // Admin bekommt immer Slot 1 (admin-video)
+    if (playerId === currentLobby.admin || (isAdmin && playerId === socket.id)) {
+        console.log(`👑 Admin-Slot für ${playerId}`);
+        return document.getElementById('admin-video');
+    }
+    
+    // Für Spieler: Finde Position in der Spieler-Liste
+    const playerIndex = currentLobby.players.findIndex(p => p.id === playerId);
+    if (playerIndex !== -1 && playerIndex < 4) {
+        const slotIds = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
+        const slotId = slotIds[playerIndex];
+        console.log(`🎮 Spieler-Slot ${slotId} für ${playerId} (Position ${playerIndex + 1})`);
+        return document.getElementById(slotId);
+    }
+    
+    // Fallback: Finde ersten freien Slot
+    console.warn(`⚠️ Spieler ${playerId} nicht in Lobby gefunden, verwende freien Slot`);
+    const slotIds = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
+    for (const slotId of slotIds) {
+        const slot = document.getElementById(slotId);
+        if (slot && !slot.dataset.playerId) {
+            console.log(`📺 Freier Slot ${slotId} für ${playerId}`);
+            return slot;
+        }
+    }
+    
+    console.error(`❌ Kein Slot verfügbar für ${playerId}`);
+    return null;
+}
+
 function displayMyVideo(stream) {
     console.log(`🎥 Zeige mein Video... (isAdmin: ${isAdmin}, Socket-ID: ${socket.id})`);
     
-    // Bestimme welcher Video-Slot für mich verwendet werden soll
-    let myVideoSlot;
-    if (isAdmin) {
-        myVideoSlot = document.getElementById('admin-video');
-        if (myVideoSlot) {
-            myVideoSlot.dataset.playerId = socket.id; // Markiere Admin-Slot als besetzt
-            console.log(`✅ Admin-Slot reserviert für Socket-ID: ${socket.id}`);
-        }
-    } else {
-        // Für Spieler: Finde den ersten freien Slot
-        const playerSlots = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
-        console.log(`🔍 Suche freien Spieler-Slot für Socket-ID: ${socket.id}`);
-        
-        for (const slotId of playerSlots) {
-            const slot = document.getElementById(slotId);
-            if (slot) {
-                const currentOccupant = slot.dataset.playerId;
-                console.log(`  - ${slotId}: ${currentOccupant ? 'besetzt von ' + currentOccupant : 'frei'}`);
-                
-                if (!currentOccupant) {
+    // Versuche feste Slot-Zuordnung, fallback auf Admin/freien Slot
+    let myVideoSlot = getFixedSlotForPlayer(socket.id);
+    
+    // Fallback falls feste Zuordnung fehlschlägt
+    if (!myVideoSlot) {
+        console.warn(`⚠️ Feste Zuordnung fehlgeschlagen, verwende Fallback`);
+        if (isAdmin) {
+            myVideoSlot = document.getElementById('admin-video');
+        } else {
+            // Finde ersten freien Spieler-Slot
+            const playerSlots = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
+            for (const slotId of playerSlots) {
+                const slot = document.getElementById(slotId);
+                if (slot && !slot.dataset.playerId) {
                     myVideoSlot = slot;
-                    slot.dataset.playerId = socket.id; // Konsistent mit displayRemoteVideo
-                    console.log(`✅ Spieler-Slot ${slotId} reserviert für Socket-ID: ${socket.id}`);
                     break;
                 }
             }
         }
+    }
+    
+    if (myVideoSlot) {
+        myVideoSlot.dataset.playerId = socket.id;
+        console.log(`✅ Video-Slot ${myVideoSlot.id} für mich (Socket-ID: ${socket.id})`);
     }
     
     if (myVideoSlot) {
@@ -1137,28 +1341,26 @@ function displayRemoteVideo(stream, peerId, peerName) {
         return;
     }
     
-    // Finde freien Video-Slot (korrekte CSS-Klasse verwenden)
-    const videoSlots = document.querySelectorAll('.player-video-slot');
-    console.log(`🔍 Verfügbare Video-Slots: ${videoSlots.length}`);
+    // Versuche feste Slot-Zuordnung, fallback auf freie Slots
+    let targetSlot = getFixedSlotForPlayer(peerId);
     
-    let targetSlot = null;
-    
-    for (const slot of videoSlots) {
-        const slotId = slot.id;
-        const occupiedBy = slot.dataset.playerId;
-        console.log(`🔍 Prüfe Slot ${slotId}: ${occupiedBy ? 'besetzt von ' + occupiedBy : 'frei'}`);
+    // Falls feste Zuordnung fehlschlägt, verwende freien Slot
+    if (!targetSlot) {
+        console.warn(`⚠️ Feste Zuordnung fehlgeschlagen für ${peerId}, suche freien Slot`);
+        const videoSlots = document.querySelectorAll('.player-video-slot');
         
-        // Überspringe meinen eigenen Slot
-        if (slot.dataset.playerId === socket.id) {
-            console.log(`⏭️ Überspringe eigenen Slot: ${slotId}`);
-            continue;
-        }
-        
-        // Finde freien Slot oder bereits diesem Peer zugewiesenen
-        if (!slot.dataset.playerId || slot.dataset.playerId === peerId) {
-            targetSlot = slot;
-            console.log(`✅ Slot ${slotId} ausgewählt für ${peerName}`);
-            break;
+        for (const slot of videoSlots) {
+            // Überspringe meinen eigenen Slot
+            if (slot.dataset.playerId === socket.id) {
+                continue;
+            }
+            
+            // Finde freien Slot oder bereits diesem Peer zugewiesenen
+            if (!slot.dataset.playerId || slot.dataset.playerId === peerId) {
+                targetSlot = slot;
+                console.log(`✅ Freier Slot ${slot.id} für ${peerName}`);
+                break;
+            }
         }
     }
     
@@ -1271,6 +1473,65 @@ function getPlayerName() {
     // Finde aktuellen Spieler-Namen
     const currentPlayer = currentLobby.players.find(p => p.id === socket.id);
     return currentPlayer ? currentPlayer.name : 'Unbekannt';
+}
+
+// Neue Funktion: Alle Video-Slots neu organisieren - VORSICHTIG
+function refreshAllVideoSlots(participants) {
+    console.log('🔄 Refreshing all video slots with participants:', participants);
+    
+    if (!webrtc || !webrtc.isInCall) {
+        console.log('⚠️ Nicht im Video Call - überspringe Refresh');
+        return;
+    }
+    
+    console.log('📊 Aktuelle Peer Connections:', webrtc.peerConnections.size);
+    console.log('📊 Lokaler Stream verfügbar:', !!webrtc.localStream);
+    
+    // NICHT alle Slots zurücksetzen - nur neu zuweisen
+    console.log('🔄 Weise alle Videos neu zu...');
+    
+    participants.forEach(participant => {
+        console.log(`🔍 Verarbeite Participant: ${participant.name} (${participant.id})`);
+        
+        if (participant.id === socket.id) {
+            // Das bin ich selbst - stelle sicher dass mein Video da ist
+            console.log(`👤 Das bin ich selbst - überprüfe lokales Video`);
+            if (webrtc.localStream) {
+                const mySlot = getFixedSlotForPlayer(socket.id);
+                if (mySlot && !mySlot.dataset.playerId) {
+                    console.log(`🔄 Weise mein lokales Video neu zu`);
+                    displayMyVideo(webrtc.localStream);
+                }
+            }
+        } else {
+            // Remote Participant - suche aktive Connection
+            const peerConnection = webrtc.peerConnections.get(participant.id);
+            if (peerConnection && peerConnection.remoteStream) {
+                console.log(`🔗 Re-assigning remote video for ${participant.name}`);
+                displayRemoteVideo(peerConnection.remoteStream, participant.id, participant.name);
+            } else {
+                console.log(`❌ Keine aktive Connection für ${participant.name}`);
+            }
+        }
+    });
+    
+    console.log('✅ Video-Slot-Refresh abgeschlossen');
+    
+    // Debug: Zeige finale Slot-Zuordnung
+    setTimeout(() => debugSlotAssignment(), 200);
+}
+
+// Debug-Funktion: Zeige aktuelle Slot-Zuordnung
+function debugSlotAssignment() {
+    console.log('🔍 === AKTUELLE SLOT-ZUORDNUNG ===');
+    const slots = document.querySelectorAll('.player-video-slot');
+    slots.forEach(slot => {
+        const playerId = slot.dataset.playerId;
+        const playerLabel = slot.querySelector('.player-label')?.textContent;
+        const hasVideo = slot.querySelector('.player-video').style.display !== 'none';
+        console.log(`📺 ${slot.id}: ${playerId ? `Player ${playerId} (${playerLabel}) ${hasVideo ? '✅' : '❌'}` : 'LEER'}`);
+    });
+    console.log('🔍 === ENDE SLOT-ZUORDNUNG ===');
 }
 
 function removePlayerVideoByName(playerName) {

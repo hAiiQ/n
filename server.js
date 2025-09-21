@@ -192,10 +192,53 @@ io.on('connection', (socket) => {
                 participants: lobby.videoCallParticipants
             });
             
-            // Beitritt an andere melden
+            // Beitritt an andere melden mit vollständiger Participant-Liste
             socket.to(lobbyCode).emit('player-joined-call-notification', { 
                 playerName, 
-                playerId: participantId 
+                playerId: participantId,
+                allParticipants: lobby.videoCallParticipants
+            });
+            
+            // Video-Slots für alle aktualisieren
+            io.to(lobbyCode).emit('refresh-video-slots', {
+                participants: lobby.videoCallParticipants,
+                triggerBy: playerName
+            });
+        }
+    });
+    
+    // Event für Participant-Anfrage
+    socket.on('request-video-participants', (data) => {
+        const { lobbyCode } = data;
+        const lobby = lobbies.get(lobbyCode);
+        
+        if (lobby) {
+            socket.emit('video-participants-response', {
+                participants: lobby.videoCallParticipants,
+                participantCount: lobby.videoCallParticipants.length
+            });
+        }
+    });
+    
+    // Force Connect All - für Debugging/Reparatur
+    socket.on('force-connect-all-participants', (data) => {
+        const { lobbyCode, mySocketId } = data;
+        const lobby = lobbies.get(lobbyCode);
+        
+        if (lobby) {
+            console.log(`🔧 Force Connect All für ${mySocketId} in Lobby ${lobbyCode}`);
+            console.log(`📊 Verfügbare Participants:`, lobby.videoCallParticipants.map(p => `${p.name} (${p.id})`));
+            
+            // Sende komplette Participant-Liste zurück
+            socket.emit('force-connect-response', {
+                allParticipants: lobby.videoCallParticipants,
+                yourSocketId: mySocketId
+            });
+            
+            // Benachrichtige alle anderen, dass jemand force connect macht  
+            socket.to(lobbyCode).emit('someone-force-connecting', {
+                requesterName: lobby.videoCallParticipants.find(p => p.socketId === socket.id)?.name || 'Unbekannt',
+                requesterId: mySocketId
             });
         }
     });
@@ -306,6 +349,25 @@ io.on('connection', (socket) => {
                     io.to(lobbyCode).emit('player-left', { 
                         lobby, 
                         removedPlayer: removedPlayer.name 
+                    });
+                }
+                
+                // Aus Video Call entfernen
+                const videoParticipantIndex = lobby.videoCallParticipants.findIndex(p => p.socketId === socket.id);
+                if (videoParticipantIndex !== -1) {
+                    const removedParticipant = lobby.videoCallParticipants.splice(videoParticipantIndex, 1)[0];
+                    console.log(`${removedParticipant.name} hat den Video Call verlassen`);
+                    
+                    // Video-Slots für alle aktualisieren
+                    io.to(lobbyCode).emit('refresh-video-slots', {
+                        participants: lobby.videoCallParticipants,
+                        triggerBy: `${removedParticipant.name} (left)`
+                    });
+                    
+                    // Status aktualisieren
+                    io.to(lobbyCode).emit('video-call-status-update', {
+                        participantCount: lobby.videoCallParticipants.length,
+                        participants: lobby.videoCallParticipants
                     });
                 }
             }

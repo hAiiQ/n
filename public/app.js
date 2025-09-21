@@ -518,21 +518,36 @@ class WebRTCManager {
             this.pendingIceCandidates.delete(peerId);
         }
 
-        // Event Handlers mit verbessertem Debugging
+        // Event Handlers mit MAXIMALEM Debugging
         peerConnection.ontrack = (event) => {
-            console.log(`📹 Remote Stream empfangen von: ${peerName}`);
+            console.log(`🎉 ONTRACK EVENT AUSGELÖST für: ${peerName}`);
+            console.log(`📹 Event Object:`, event);
             console.log(`📹 Event Details:`, {
-                streamsCount: event.streams.length,
-                tracksCount: event.track ? 1 : 0,
-                trackKind: event.track?.kind
+                streamsCount: event.streams?.length || 0,
+                hasTrack: !!event.track,
+                trackKind: event.track?.kind,
+                trackEnabled: event.track?.enabled,
+                trackReadyState: event.track?.readyState,
+                receiver: !!event.receiver
             });
             
             if (event.streams && event.streams.length > 0) {
                 const remoteStream = event.streams[0];
-                console.log(`🎬 Verwende Stream ${remoteStream.id} für ${peerName}`);
+                console.log(`🎬 Remote Stream Details:`, {
+                    id: remoteStream.id,
+                    active: remoteStream.active,
+                    videoTracks: remoteStream.getVideoTracks().length,
+                    audioTracks: remoteStream.getAudioTracks().length
+                });
+                
+                console.log(`📺 Rufe displayRemoteVideo auf für ${peerName}...`);
                 displayRemoteVideo(remoteStream, peerId, peerName);
+            } else if (event.track) {
+                console.warn(`⚠️ Track ohne Stream empfangen für ${peerName} - erstelle neuen Stream`);
+                const newStream = new MediaStream([event.track]);
+                displayRemoteVideo(newStream, peerId, peerName);
             } else {
-                console.error(`❌ Kein Stream in ontrack Event für ${peerName}`);
+                console.error(`❌ Weder Stream noch Track in ontrack Event für ${peerName}!`);
             }
         };
 
@@ -565,58 +580,107 @@ class WebRTCManager {
 
     async createOffer(peerId) {
         const peerData = this.peerConnections.get(peerId);
-        if (!peerData) return;
+        if (!peerData) {
+            console.error(`❌ Peer Connection nicht gefunden beim createOffer für: ${peerId}`);
+            return;
+        }
 
         try {
-            const offer = await peerData.connection.createOffer();
+            console.log(`📝 Erstelle Offer für: ${peerData.name}`);
+            
+            // Prüfe Connection State vor Offer
+            console.log(`🔍 Connection State vor Offer: ${peerData.connection.connectionState}`);
+            console.log(`🔍 Signaling State vor Offer: ${peerData.connection.signalingState}`);
+            
+            // Prüfe ob lokaler Stream korrekt hinzugefügt wurde
+            const senders = peerData.connection.getSenders();
+            console.log(`📡 Sender für ${peerData.name}:`, senders.map(s => s.track?.kind || 'null'));
+            
+            const offer = await peerData.connection.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
+            
             await peerData.connection.setLocalDescription(offer);
+            console.log(`✅ Local Description gesetzt für: ${peerData.name}`);
             
             socket.emit('webrtc-offer', {
                 to: peerId,
-                offer: offer
+                offer: offer,
+                lobbyCode: currentLobbyCode
             });
             
-            console.log(`📤 Offer gesendet an: ${peerData.name}`);
+            console.log(`📤 Offer gesendet an: ${peerData.name} (${peerId})`);
         } catch (error) {
-            console.error('❌ Fehler beim Erstellen des Offers:', error);
+            console.error(`❌ Fehler beim Erstellen des Offers für ${peerData.name}:`, error);
         }
     }
 
     async handleOffer(data) {
+        console.log(`📥 Behandle Offer von: ${data.from}`);
+        
         const peerData = this.peerConnections.get(data.from);
         if (!peerData) {
-            console.warn('❌ Peer Connection nicht gefunden für Offer');
+            console.warn(`❌ Peer Connection nicht gefunden für Offer von: ${data.from}`);
+            console.log(`🔍 Verfügbare Peer Connections:`, Array.from(this.peerConnections.keys()));
             return;
         }
 
         try {
+            console.log(`🔍 Connection State vor setRemoteDescription: ${peerData.connection.connectionState}`);
+            console.log(`🔍 Signaling State vor setRemoteDescription: ${peerData.connection.signalingState}`);
+            
             await peerData.connection.setRemoteDescription(data.offer);
+            console.log(`✅ Remote Description gesetzt für: ${peerData.name}`);
+            
+            // Prüfe ob lokaler Stream hinzugefügt wurde
+            const senders = peerData.connection.getSenders();
+            console.log(`📡 Meine Sender für ${peerData.name}:`, senders.map(s => s.track?.kind || 'null'));
+            
             const answer = await peerData.connection.createAnswer();
             await peerData.connection.setLocalDescription(answer);
+            console.log(`✅ Answer erstellt und Local Description gesetzt für: ${peerData.name}`);
             
             socket.emit('webrtc-answer', {
                 to: data.from,
-                answer: answer
+                answer: answer,
+                lobbyCode: currentLobbyCode
             });
             
-            console.log(`📤 Answer gesendet an: ${peerData.name}`);
+            console.log(`📤 Answer gesendet an: ${peerData.name} (${data.from})`);
         } catch (error) {
-            console.error('❌ Fehler beim Behandeln des Offers:', error);
+            console.error(`❌ Fehler beim Behandeln des Offers von ${peerData.name}:`, error);
         }
     }
 
     async handleAnswer(data) {
+        console.log(`📥 Behandle Answer von: ${data.from}`);
+        
         const peerData = this.peerConnections.get(data.from);
         if (!peerData) {
-            console.warn('❌ Peer Connection nicht gefunden für Answer');
+            console.warn(`❌ Peer Connection nicht gefunden für Answer von: ${data.from}`);
+            console.log(`🔍 Verfügbare Peer Connections:`, Array.from(this.peerConnections.keys()));
             return;
         }
 
         try {
+            console.log(`🔍 Connection State vor setRemoteDescription (Answer): ${peerData.connection.connectionState}`);
+            console.log(`🔍 Signaling State vor setRemoteDescription (Answer): ${peerData.connection.signalingState}`);
+            
             await peerData.connection.setRemoteDescription(data.answer);
-            console.log(`📥 Answer von ${peerData.name} verarbeitet`);
+            console.log(`📥 Answer von ${peerData.name} verarbeitet - WebRTC Negotiation abgeschlossen`);
+            
+            // Final Status Check
+            setTimeout(() => {
+                console.log(`🔍 Finale Connection States für ${peerData.name}:`);
+                console.log(`  - Connection: ${peerData.connection.connectionState}`);
+                console.log(`  - Signaling: ${peerData.connection.signalingState}`);
+                console.log(`  - ICE Gathering: ${peerData.connection.iceGatheringState}`);
+                console.log(`  - ICE Connection: ${peerData.connection.iceConnectionState}`);
+            }, 1000);
+            
         } catch (error) {
-            console.error('❌ Fehler beim Behandeln der Answer:', error);
+            console.error(`❌ Fehler beim Behandeln der Answer von ${peerData.name}:`, error);
         }
     }
 
@@ -663,6 +727,34 @@ class WebRTCManager {
 
 // WebRTC Manager Instance
 const webrtc = new WebRTCManager();
+
+// DEBUG FUNKTION - in Konsole aufrufbar
+window.debugWebRTC = function() {
+    console.log('🔧 WebRTC Debug Status:');
+    console.log(`📡 Peer Connections: ${webrtc.peerConnections.size}`);
+    console.log(`🎥 Lokaler Stream: ${webrtc.localStream ? 'Vorhanden' : 'Fehlt'}`);
+    console.log(`📞 Im Call: ${webrtc.isInCall}`);
+    
+    if (webrtc.localStream) {
+        const tracks = webrtc.localStream.getTracks();
+        console.log(`📹 Lokale Tracks: ${tracks.map(t => `${t.kind}(${t.enabled?'on':'off'})`).join(', ')}`);
+    }
+    
+    webrtc.peerConnections.forEach((peerData, peerId) => {
+        const conn = peerData.connection;
+        console.log(`👤 ${peerData.name} (${peerId}):`);
+        console.log(`  - Connection: ${conn.connectionState}`);
+        console.log(`  - Signaling: ${conn.signalingState}`);
+        console.log(`  - ICE Connection: ${conn.iceConnectionState}`);
+        console.log(`  - ICE Gathering: ${conn.iceGatheringState}`);
+        
+        const senders = conn.getSenders();
+        console.log(`  - Senders: ${senders.map(s => s.track?.kind || 'null').join(', ')}`);
+        
+        const receivers = conn.getReceivers();
+        console.log(`  - Receivers: ${receivers.map(r => r.track?.kind || 'null').join(', ')}`);
+    });
+};
 
 // VIDEO CALL FUNCTIONS - VEREINFACHT
 function setupVideoCallControls() {

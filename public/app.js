@@ -218,36 +218,25 @@ socket.on('player-joined-call-notification', (data) => {
     console.log(`📢 Spieler beigetreten-Notification:`, data);
     showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
     
-    // Prüfe ob ich selbst im Call bin und Stream bereit ist
-    if (webrtc && webrtc.isInCall && webrtc.localStream && data.playerId !== socket.id) {
-        console.log(`🔗 Erstelle Peer Connection für: ${data.playerName} (${data.playerId})`);
-        console.log(`🔍 Mein Stream Ready: ${webrtc.localStream ? 'Ja' : 'Nein'}`);
-        console.log(`🔍 Meine Socket-ID: ${socket.id}, Andere ID: ${data.playerId}`);
+    // VEREINFACHTE AGGRESSIVE VERBINDUNGSSTRATEGIE
+    if (webrtc && webrtc.isInCall && data.playerId !== socket.id) {
+        console.log(`� AGGRESSIVE CONNECT zu: ${data.playerName} (${data.playerId})`);
         
-        // Prüfe ob Connection bereits existiert
+        // Immer neue Connection erstellen oder bestehende verwenden
         if (!webrtc.peerConnections.has(data.playerId)) {
+            console.log(`➕ Erstelle neue Peer Connection für ${data.playerName}`);
             webrtc.createPeerConnection(data.playerId, data.playerName);
-            
-            // Als niedrigere Socket-ID initiiert den Call (deterministisch)
-            if (socket.id < data.playerId) {
-                console.log(`📞 Initiiere Offer an: ${data.playerName} (ich habe niedrigere ID)`);
-                setTimeout(() => {
-                    if (webrtc.peerConnections.has(data.playerId)) {
-                        webrtc.createOffer(data.playerId);
-                    }
-                }, 2000 + Math.random() * 1000);
-            } else {
-                console.log(`⏳ Warte auf Offer von: ${data.playerName} (andere hat niedrigere ID)`);
+        }
+        
+        // BEIDE Seiten versuchen Offers - lass WebRTC das sortieren
+        console.log(`📞 Sende sofort Offer an: ${data.playerName}`);
+        setTimeout(() => {
+            if (webrtc.peerConnections.has(data.playerId) && webrtc.localStream) {
+                webrtc.createOffer(data.playerId);
             }
-        } else {
-            console.log(`ℹ️ Peer Connection zu ${data.playerName} existiert bereits`);
-        }
+        }, 1000 + Math.random() * 500);
     } else {
-        if (!webrtc?.isInCall) {
-            console.log(`⚠️ Ich bin noch nicht im Call - ignoriere ${data.playerName}`);
-        } else if (!webrtc?.localStream) {
-            console.log(`⚠️ Mein Stream ist noch nicht bereit - ignoriere ${data.playerName}`);
-        }
+        console.log(`⚠️ Überspringe ${data.playerName}: Call=${!!webrtc?.isInCall}, Stream=${!!webrtc?.localStream}, SameId=${data.playerId === socket.id}`);
     }
     
     updateCallStatus();
@@ -321,23 +310,23 @@ socket.on('force-connect-response', (data) => {
     
     console.log(`🔄 Stelle Verbindungen zu ${allParticipants.length} Participants her...`);
     
-    allParticipants.forEach(participant => {
+    allParticipants.forEach((participant, index) => {
         if (participant.id !== yourSocketId && participant.socketId !== socket.id) {
-            console.log(`🔗 Force Connect zu: ${participant.name} (${participant.id})`);
+            console.log(`🔗 AGGRESSIVE Force Connect zu: ${participant.name} (${participant.id})`);
             
-            // Prüfe ob Peer Connection existiert
+            // Immer neue Peer Connection erstellen
             if (!webrtc.peerConnections.has(participant.id)) {
                 console.log(`➕ Erstelle neue Peer Connection für ${participant.name}`);
                 webrtc.createPeerConnection(participant.id, participant.name);
             }
             
-            // Force einen neuen Offer (nach kurzer Verzögerung)
+            // AGGRESSIVE: Beide Seiten senden Offers
             setTimeout(() => {
-                if (socket.id < participant.id && webrtc.peerConnections.has(participant.id)) {
-                    console.log(`📞 Force Offer an ${participant.name}`);
+                if (webrtc.peerConnections.has(participant.id) && webrtc.localStream) {
+                    console.log(`📞 AGGRESSIVE Offer an ${participant.name}`);
                     webrtc.createOffer(participant.id);
                 }
-            }, 500 + Math.random() * 500);
+            }, (index + 1) * 300); // Gestaffelte Offers alle 300ms
         }
     });
 });
@@ -922,6 +911,17 @@ window.joinVideoCall = async function joinVideoCall() {
         
         // 5. Connections zu anderen Spielern aufbauen
         setupPeerConnectionsForExistingPlayers();
+        
+        // 6. SOFORT nach Join: Force Connect zu allen bestehenden Teilnehmern
+        setTimeout(() => {
+            console.log('🚀 AUTO FORCE CONNECT nach Video Call Join...');
+            if (currentLobbyCode) {
+                socket.emit('force-connect-all-participants', { 
+                    lobbyCode: currentLobbyCode,
+                    mySocketId: socket.id 
+                });
+            }
+        }, 3000); // 3 Sekunden Verzögerung damit alle initialisiert sind
         
         showNotification('✅ Video Call gestartet!', 'success');
         
@@ -1528,10 +1528,32 @@ function debugSlotAssignment() {
     slots.forEach(slot => {
         const playerId = slot.dataset.playerId;
         const playerLabel = slot.querySelector('.player-label')?.textContent;
-        const hasVideo = slot.querySelector('.player-video').style.display !== 'none';
-        console.log(`📺 ${slot.id}: ${playerId ? `Player ${playerId} (${playerLabel}) ${hasVideo ? '✅' : '❌'}` : 'LEER'}`);
+        const video = slot.querySelector('.player-video');
+        const hasStream = video && video.srcObject;
+        const isPlaying = video && !video.paused;
+        console.log(`📺 ${slot.id}: ${playerId ? `Player ${playerId} (${playerLabel}) Stream:${hasStream ? '✅' : '❌'} Playing:${isPlaying ? '✅' : '❌'}` : 'LEER'}`);
     });
     console.log('🔍 === ENDE SLOT-ZUORDNUNG ===');
+}
+
+// Debug WebRTC Status
+window.debugWebRTC = function() {
+    console.log('🔍 === WEBRTC DEBUG STATUS ===');
+    console.log('🔍 isInCall:', webrtc?.isInCall);
+    console.log('🔍 localStream:', !!webrtc?.localStream);
+    console.log('🔍 Peer Connections:', webrtc?.peerConnections?.size || 0);
+    
+    if (webrtc?.peerConnections) {
+        webrtc.peerConnections.forEach((peerData, peerId) => {
+            console.log(`🔗 ${peerId}:`, {
+                connectionState: peerData.connection?.connectionState,
+                iceConnectionState: peerData.connection?.iceConnectionState,
+                hasRemoteStream: !!peerData.remoteStream,
+                name: peerData.name
+            });
+        });
+    }
+    console.log('🔍 === ENDE WEBRTC DEBUG ===');
 }
 
 function removePlayerVideoByName(playerName) {

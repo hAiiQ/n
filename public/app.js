@@ -481,24 +481,48 @@ class WebRTCManager {
             });
         }
 
-        // Event Handlers
+        // Event Handlers mit verbessertem Debugging
         peerConnection.ontrack = (event) => {
             console.log(`📹 Remote Stream empfangen von: ${peerName}`);
-            const remoteStream = event.streams[0];
-            displayRemoteVideo(remoteStream, peerId, peerName);
+            console.log(`📹 Event Details:`, {
+                streamsCount: event.streams.length,
+                tracksCount: event.track ? 1 : 0,
+                trackKind: event.track?.kind
+            });
+            
+            if (event.streams && event.streams.length > 0) {
+                const remoteStream = event.streams[0];
+                console.log(`🎬 Verwende Stream ${remoteStream.id} für ${peerName}`);
+                displayRemoteVideo(remoteStream, peerId, peerName);
+            } else {
+                console.error(`❌ Kein Stream in ontrack Event für ${peerName}`);
+            }
         };
 
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
+                console.log(`🧊 ICE Candidate gesendet an ${peerName}`);
                 socket.emit('ice-candidate', {
                     to: peerId,
-                    candidate: event.candidate
+                    candidate: event.candidate,
+                    lobbyCode: currentLobbyCode
                 });
+            } else {
+                console.log(`🏁 ICE Gathering abgeschlossen für ${peerName}`);
             }
         };
 
         peerConnection.onconnectionstatechange = () => {
-            console.log(`🔄 Connection State (${peerName}):`, peerConnection.connectionState);
+            const state = peerConnection.connectionState;
+            console.log(`🔄 Connection State (${peerName}): ${state}`);
+            
+            if (state === 'connected') {
+                console.log(`✅ WebRTC Verbindung zu ${peerName} hergestellt`);
+                showNotification(`✅ Verbunden mit ${peerName}`, 'success');
+            } else if (state === 'failed' || state === 'disconnected') {
+                console.log(`❌ WebRTC Verbindung zu ${peerName} ${state}`);
+                showNotification(`❌ Verbindung zu ${peerName} ${state}`, 'error');
+            }
         };
     }
 
@@ -891,54 +915,92 @@ function displayMyVideo(stream) {
 
 function displayRemoteVideo(stream, peerId, peerName) {
     console.log(`📺 Zeige Remote Video für: ${peerName} (ID: ${peerId})`);
+    console.log(`📺 Stream Details:`, stream ? {
+        id: stream.id,
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length
+    } : 'Kein Stream!');
+    
+    if (!stream) {
+        console.error(`❌ Kein Stream für ${peerName} erhalten!`);
+        return;
+    }
     
     // Finde freien Video-Slot (korrekte CSS-Klasse verwenden)
     const videoSlots = document.querySelectorAll('.player-video-slot');
+    console.log(`🔍 Verfügbare Video-Slots: ${videoSlots.length}`);
+    
     let targetSlot = null;
     
     for (const slot of videoSlots) {
+        const slotId = slot.id;
+        const occupiedBy = slot.dataset.playerId;
+        console.log(`🔍 Prüfe Slot ${slotId}: ${occupiedBy ? 'besetzt von ' + occupiedBy : 'frei'}`);
+        
         // Überspringe meinen eigenen Slot
         if (slot.dataset.playerId === socket.id) {
+            console.log(`⏭️ Überspringe eigenen Slot: ${slotId}`);
             continue;
         }
         
-        // Finde freien Slot
+        // Finde freien Slot oder bereits diesem Peer zugewiesenen
         if (!slot.dataset.playerId || slot.dataset.playerId === peerId) {
             targetSlot = slot;
+            console.log(`✅ Slot ${slotId} ausgewählt für ${peerName}`);
             break;
         }
     }
     
     if (targetSlot) {
-        console.log(`📺 Video-Slot gefunden für ${peerName}`);
+        console.log(`📺 Video-Slot ${targetSlot.id} gefunden für ${peerName}`);
         targetSlot.dataset.playerId = peerId;
         
         const video = targetSlot.querySelector('.player-video');
         const placeholder = targetSlot.querySelector('.video-placeholder');
         const playerLabel = targetSlot.querySelector('.player-label');
         
-        if (video && stream) {
-            video.srcObject = stream;
-            video.muted = false; // Remote Video nicht stumm schalten
-            
-            video.play().then(() => {
-                console.log(`✅ Remote Video gestartet für ${peerName}`);
-                video.style.display = 'block';
-                if (placeholder) {
-                    placeholder.style.display = 'none';
-                }
-                targetSlot.classList.add('active');
-                
-                // Player-Label aktualisieren
-                if (playerLabel) {
-                    playerLabel.textContent = peerName;
-                }
-            }).catch(error => {
-                console.error(`❌ Remote Video Play Fehler für ${peerName}:`, error);
-            });
+        if (!video) {
+            console.error(`❌ Kein Video-Element in Slot ${targetSlot.id} gefunden!`);
+            return;
         }
+        
+        console.log(`🎬 Setze Stream für ${peerName}...`);
+        video.srcObject = stream;
+        video.muted = false; // Remote Video nicht stumm schalten
+        video.autoplay = true;
+        video.playsInline = true;
+        
+        video.onloadedmetadata = () => {
+            console.log(`📐 Video Metadaten geladen für ${peerName}: ${video.videoWidth}x${video.videoHeight}`);
+        };
+        
+        video.play().then(() => {
+            console.log(`✅ Remote Video gestartet für ${peerName}`);
+            video.style.display = 'block';
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            targetSlot.classList.add('active');
+            
+            // Player-Label aktualisieren
+            if (playerLabel) {
+                playerLabel.textContent = peerName;
+            }
+            
+            // Erfolgs-Notification
+            showNotification(`✅ ${peerName}'s Video wird angezeigt`, 'success');
+            
+        }).catch(error => {
+            console.error(`❌ Remote Video Play Fehler für ${peerName}:`, error);
+            showNotification(`❌ Video-Wiedergabe für ${peerName} fehlgeschlagen`, 'error');
+        });
     } else {
         console.error(`❌ Kein freier Video-Slot für ${peerName} gefunden!`);
+        console.log(`📊 Aktuelle Slot-Belegung:`);
+        videoSlots.forEach((slot, i) => {
+            console.log(`  Slot ${i} (${slot.id}): ${slot.dataset.playerId || 'frei'}`);
+        });
+        showNotification(`❌ Kein Video-Slot für ${peerName} verfügbar`, 'error');
     }
 }
 

@@ -185,59 +185,59 @@ io.on('connection', (socket) => {
         console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen`);
     });
     
-    // WebRTC Signaling - Minimaler sauberer Signaling-Server
+    // WebRTC Signaling - Korrigierte Parameter-Behandlung
     socket.on('webrtc-offer', (data) => {
-        const { target, offer, lobbyCode } = data;
+        const { to, offer, lobbyCode } = data;
         
         // Validierung
-        if (!target || !offer) {
+        if (!to || !offer) {
             console.error('Invalid offer data:', data);
             return;
         }
         
-        socket.to(target).emit('webrtc-offer', {
+        socket.to(to).emit('webrtc-offer', {
             from: socket.id,
             offer: offer,
             lobbyCode: lobbyCode
         });
         
-        console.log(`📤 WebRTC Offer: ${socket.id} → ${target}`);
+        console.log(`📤 WebRTC Offer: ${socket.id} → ${to}`);
     });
     
     socket.on('webrtc-answer', (data) => {
-        const { target, answer, lobbyCode } = data;
+        const { to, answer, lobbyCode } = data;
         
         // Validierung
-        if (!target || !answer) {
+        if (!to || !answer) {
             console.error('Invalid answer data:', data);
             return;
         }
         
-        socket.to(target).emit('webrtc-answer', {
+        socket.to(to).emit('webrtc-answer', {
             from: socket.id,
             answer: answer,
             lobbyCode: lobbyCode
         });
         
-        console.log(`📤 WebRTC Answer: ${socket.id} → ${target}`);
+        console.log(`📤 WebRTC Answer: ${socket.id} → ${to}`);
     });
     
     socket.on('ice-candidate', (data) => {
-        const { target, candidate, lobbyCode } = data;
+        const { to, candidate, lobbyCode } = data;
         
         // Validierung
-        if (!target || !candidate) {
+        if (!to || !candidate) {
             console.error('Invalid ICE candidate data:', data);
             return;
         }
         
-        socket.to(target).emit('ice-candidate', {
+        socket.to(to).emit('ice-candidate', {
             from: socket.id,
             candidate: candidate,
             lobbyCode: lobbyCode
         });
         
-        console.log(`🧊 ICE Candidate: ${socket.id} → ${target}`);
+        console.log(`🧊 ICE Candidate: ${socket.id} → ${to}`);
     });
     
     // Verbindung getrennt

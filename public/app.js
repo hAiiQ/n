@@ -1053,21 +1053,33 @@ function updateVideoCallStatusDisplay(participantCount, participants) {
 }
 
 function displayMyVideo(stream) {
-    console.log('🎥 Zeige mein Video...');
+    console.log(`🎥 Zeige mein Video... (isAdmin: ${isAdmin}, Socket-ID: ${socket.id})`);
     
     // Bestimme welcher Video-Slot für mich verwendet werden soll
     let myVideoSlot;
     if (isAdmin) {
         myVideoSlot = document.getElementById('admin-video');
+        if (myVideoSlot) {
+            myVideoSlot.dataset.playerId = socket.id; // Markiere Admin-Slot als besetzt
+            console.log(`✅ Admin-Slot reserviert für Socket-ID: ${socket.id}`);
+        }
     } else {
         // Für Spieler: Finde den ersten freien Slot
         const playerSlots = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
+        console.log(`🔍 Suche freien Spieler-Slot für Socket-ID: ${socket.id}`);
+        
         for (const slotId of playerSlots) {
             const slot = document.getElementById(slotId);
-            if (slot && !slot.dataset.occupied) {
-                myVideoSlot = slot;
-                slot.dataset.occupied = 'true';
-                break;
+            if (slot) {
+                const currentOccupant = slot.dataset.playerId;
+                console.log(`  - ${slotId}: ${currentOccupant ? 'besetzt von ' + currentOccupant : 'frei'}`);
+                
+                if (!currentOccupant) {
+                    myVideoSlot = slot;
+                    slot.dataset.playerId = socket.id; // Konsistent mit displayRemoteVideo
+                    console.log(`✅ Spieler-Slot ${slotId} reserviert für Socket-ID: ${socket.id}`);
+                    break;
+                }
             }
         }
     }
@@ -1252,7 +1264,7 @@ function resetVideoSlot(playerSlot) {
     }
     
     playerSlot.classList.remove('active', 'admin');
-    playerSlot.removeAttribute('data-player-id');
+    delete playerSlot.dataset.playerId;
 }
 
 function getPlayerName() {

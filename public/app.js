@@ -263,9 +263,9 @@ socket.on('ice-candidate', (data) => {
     webrtc.handleIceCandidate(data);
 });
 
-// DOM Ready Event Listener für Video Call Button
+// DOM Ready Event Listener für Video Call Button (nur im Game)
 document.addEventListener('DOMContentLoaded', () => {
-    const joinButton = document.getElementById('join-video-call-lobby');
+    const joinButton = document.getElementById('join-video-call');
     if (joinButton) {
         joinButton.addEventListener('click', (e) => {
             e.preventDefault();

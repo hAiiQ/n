@@ -275,16 +275,81 @@ socket.on('ice-candidate', (data) => {
     webrtc.handleIceCandidate(data);
 });
 
-// DOM Ready Event Listener für Video Call Button (nur im Game)
+// DOM Ready Event Listener für Video Call Buttons (nur im Game)
 document.addEventListener('DOMContentLoaded', () => {
     const joinButton = document.getElementById('join-video-call');
+    const testButton = document.getElementById('test-webcam');
+    
     if (joinButton) {
         joinButton.addEventListener('click', (e) => {
             e.preventDefault();
             joinVideoCall();
         });
     }
+    
+    if (testButton) {
+        testButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            testWebcam();
+        });
+    }
 });
+
+// Webcam Test Funktion
+window.testWebcam = async function testWebcam() {
+    console.log('🧪 Teste Webcam...');
+    
+    const testButton = document.getElementById('test-webcam');
+    if (testButton) {
+        testButton.disabled = true;
+        testButton.textContent = '⏳ Teste Webcam...';
+    }
+    
+    try {
+        // Temporären WebRTC Manager für Test verwenden
+        const testWebrtc = new WebRTCManager();
+        
+        showNotification('🧪 Teste Webcam-Zugriff... Browser-Permission erforderlich!', 'info');
+        
+        const stream = await testWebrtc.initializeLocalStream();
+        
+        if (stream) {
+            const videoTracks = stream.getVideoTracks();
+            const audioTracks = stream.getAudioTracks();
+            
+            showNotification(`✅ Webcam-Test erfolgreich! Video: ${videoTracks.length}, Audio: ${audioTracks.length}`, 'success');
+            
+            // Stream wieder freigeben
+            stream.getTracks().forEach(track => track.stop());
+            
+            // Join-Button aktivieren
+            const joinButton = document.getElementById('join-video-call');
+            if (joinButton) {
+                joinButton.classList.add('btn-pulse');
+                setTimeout(() => {
+                    if (joinButton) joinButton.classList.remove('btn-pulse');
+                }, 2000);
+            }
+        } else {
+            throw new Error('Kein Stream erhalten');
+        }
+        
+    } catch (error) {
+        console.error('❌ Webcam-Test fehlgeschlagen:', error);
+        
+        let errorMsg = '❌ Webcam-Test fehlgeschlagen';
+        if (error.message.includes('verweigert')) {
+            errorMsg = '❌ Berechtigung verweigert - bitte Webcam-Zugriff erlauben';
+        }
+        
+        showNotification(errorMsg + ': ' + error.message, 'error');
+    } finally {
+        if (testButton) {
+            testButton.disabled = false;
+            testButton.textContent = '🔍 Webcam testen';
+        }
+    }
+}
 
 // VEREINFACHTES WebRTC MANAGEMENT - OHNE KOMPLEXE DEBUG-DIALOGE
 class WebRTCManager {
@@ -297,25 +362,51 @@ class WebRTCManager {
     async initializeLocalStream() {
         console.log('🎥 Initialisiere lokalen Stream...');
         
+        // Prüfe ob Media Devices verfügbar sind
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('Media Devices API nicht unterstützt - benötigt HTTPS oder localhost');
+        }
+
+        // EXPLIZITE Permission-Anfrage für bessere UX
+        console.log('🔐 Frage Webcam/Mikrofon Berechtigung an...');
+        
         // Einfache Strategien - Elgato wird wie normale Webcam behandelt
         const strategies = [
             // Standard HD Qualität
             {
                 video: { 
                     width: { ideal: 640 }, 
-                    height: { ideal: 480 }
+                    height: { ideal: 480 },
+                    facingMode: 'user'
                 }, 
                 audio: true,
-                name: 'Standard Qualität'
+                name: 'Standard Qualität (640x480)'
+            },
+            // Mittlere Qualität
+            {
+                video: { 
+                    width: { ideal: 480 }, 
+                    height: { ideal: 360 },
+                    facingMode: 'user'
+                }, 
+                audio: true,
+                name: 'Mittlere Qualität (480x360)'
             },
             // Niedrige Qualität fallback
             {
                 video: { 
                     width: 320, 
-                    height: 240
+                    height: 240,
+                    facingMode: 'user'
                 }, 
                 audio: true,
-                name: 'Niedrige Qualität'
+                name: 'Niedrige Qualität (320x240)'
+            },
+            // Basis Video ohne spezifische Auflösung
+            {
+                video: true, 
+                audio: true,
+                name: 'Basis Video'
             },
             // Nur Audio
             {
@@ -325,22 +416,52 @@ class WebRTCManager {
             }
         ];
 
+        let lastError = null;
+        
         for (let i = 0; i < strategies.length; i++) {
             try {
-                console.log(`🎥 Versuche: ${strategies[i].name}...`);
+                console.log(`🎥 Versuche Strategie ${i+1}/${strategies.length}: ${strategies[i].name}...`);
                 
+                // Expliziter getUserMedia Aufruf
                 this.localStream = await navigator.mediaDevices.getUserMedia(strategies[i]);
                 
-                console.log(`✅ Stream erfolgreich: ${strategies[i].name}`);
-                return this.localStream;
+                if (this.localStream) {
+                    const videoTracks = this.localStream.getVideoTracks();
+                    const audioTracks = this.localStream.getAudioTracks();
+                    
+                    console.log(`✅ Stream erfolgreich: ${strategies[i].name}`);
+                    console.log(`📹 Video Tracks: ${videoTracks.length}`);
+                    console.log(`🎤 Audio Tracks: ${audioTracks.length}`);
+                    
+                    if (videoTracks.length > 0) {
+                        const videoSettings = videoTracks[0].getSettings();
+                        console.log(`📐 Video Auflösung: ${videoSettings.width}x${videoSettings.height}`);
+                    }
+                    
+                    return this.localStream;
+                }
                 
             } catch (error) {
-                console.log(`❌ Fehlgeschlagen: ${strategies[i].name} - ${error.name}`);
+                lastError = error;
+                console.error(`❌ Strategie ${i+1} fehlgeschlagen: ${strategies[i].name}`, error);
+                console.error(`❌ Error Name: ${error.name}, Message: ${error.message}`);
+                
+                // Spezifische Fehlerbehandlung
+                if (error.name === 'NotAllowedError') {
+                    throw new Error('Kamera/Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.');
+                } else if (error.name === 'NotFoundError') {
+                    console.log(`⚠️ Kamera nicht gefunden bei Strategie ${i+1}, versuche nächste...`);
+                } else if (error.name === 'NotReadableError') {
+                    console.log(`⚠️ Kamera belegt bei Strategie ${i+1}, versuche nächste...`);
+                }
+                
                 if (i === strategies.length - 1) {
-                    throw error;
+                    throw lastError || error;
                 }
             }
         }
+        
+        throw new Error('Keine gültige Kamera/Mikrofon-Konfiguration gefunden');
     }
 
     createPeerConnection(peerId, peerName) {
@@ -482,16 +603,36 @@ function setupVideoCallControls() {
     if (leaveCallBtn) leaveCallBtn.addEventListener('click', leaveVideoCall);
 }
 
-// Video Call Funktion global verfügbar machen - VEREINFACHT
+// Video Call Funktion global verfügbar machen - VERBESSERT
 window.joinVideoCall = async function joinVideoCall() {
     console.log('🎬 Starte Video Call...');
     
-    // Sicherheitsprüfung
+    // Detaillierte Sicherheitsprüfung
+    console.log('🔍 Prüfe Umgebung...');
+    console.log('📍 Protocol:', location.protocol);
+    console.log('🌐 Hostname:', location.hostname);
+    console.log('📱 User Agent:', navigator.userAgent);
+    
     const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (!isSecure) {
-        showNotification('🔒 HTTPS erforderlich für Webcam-Zugriff!', 'error');
+        showNotification('🔒 HTTPS erforderlich für Webcam-Zugriff! Aktuell: ' + location.protocol, 'error');
         return;
     }
+    
+    // Prüfe MediaDevices API
+    if (!navigator.mediaDevices) {
+        showNotification('❌ MediaDevices API nicht verfügbar - Browser zu alt?', 'error');
+        return;
+    }
+    
+    // Button deaktivieren während des Ladens
+    const joinButton = document.getElementById('join-video-call');
+    if (joinButton) {
+        joinButton.disabled = true;
+        joinButton.textContent = '⏳ Webcam wird gestartet...';
+    }
+    
+    showNotification('📹 Starte Webcam... Browser-Permission erforderlich!', 'info');
 
     try {
         // 1. Lokalen Video-Stream initialisieren (Elgato wird automatisch erkannt)
@@ -534,17 +675,38 @@ window.joinVideoCall = async function joinVideoCall() {
         
     } catch (error) {
         console.error('❌ Video Call Fehler:', error);
+        console.error('❌ Error Stack:', error.stack);
+        
+        // Button wieder aktivieren
+        const joinButton = document.getElementById('join-video-call');
+        if (joinButton) {
+            joinButton.disabled = false;
+            joinButton.textContent = '📹 Video Call beitreten';
+        }
         
         let errorMsg = 'Webcam/Mikrofon Zugriff fehlgeschlagen';
+        let helpText = '';
+        
         if (error.name === 'NotFoundError') {
             errorMsg = '❌ Keine Kamera/Mikrofon gefunden';
+            helpText = 'Bitte überprüfe, ob deine Webcam angeschlossen ist.';
         } else if (error.name === 'NotAllowedError') {
-            errorMsg = '❌ Kamera-Zugriff verweigert - bitte Berechtigung erteilen';
+            errorMsg = '❌ Kamera-Zugriff verweigert';
+            helpText = 'Klicke auf das Kamera-Symbol in der Adressleiste und erlaube den Zugriff.';
         } else if (error.name === 'NotReadableError') {
-            errorMsg = '❌ Kamera wird bereits verwendet oder ist blockiert';
+            errorMsg = '❌ Kamera bereits in Verwendung';
+            helpText = 'Schließe andere Apps die deine Webcam verwenden (Zoom, Teams, etc.).';
+        } else if (error.message.includes('Media Devices API')) {
+            errorMsg = '❌ Browser nicht unterstützt';
+            helpText = 'Verwende Chrome, Firefox oder Edge mit HTTPS.';
         }
         
         showNotification(errorMsg + ': ' + error.message, 'error');
+        if (helpText) {
+            setTimeout(() => {
+                showNotification('💡 Tipp: ' + helpText, 'info');
+            }, 2000);
+        }
     }
 }
 

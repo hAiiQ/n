@@ -51,6 +51,7 @@ io.on('connection', (socket) => {
             currentPlayer: 0,
             scores: {},
             answeredQuestions: [],
+            videoCallParticipants: [], // Tracking für Video Call Teilnehmer
             categories: [
                 'Marvel Helden',
                 'DC Comics', 
@@ -166,23 +167,63 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Video Call Events
+    // Video Call Events mit Tracking
     socket.on('player-joined-call', (data) => {
         const { lobbyCode, playerName, playerId } = data;
-        socket.to(lobbyCode).emit('player-joined-call-notification', { 
-            playerName, 
-            playerId: playerId || socket.id 
-        });
-        console.log(`${playerName} ist dem Video Call in Lobby ${lobbyCode} beigetreten`);
+        const lobby = lobbies.get(lobbyCode);
+        
+        if (lobby) {
+            const participantId = playerId || socket.id;
+            
+            // Participant hinzufügen wenn noch nicht vorhanden
+            if (!lobby.videoCallParticipants.some(p => p.id === participantId)) {
+                lobby.videoCallParticipants.push({
+                    id: participantId,
+                    name: playerName,
+                    socketId: socket.id
+                });
+            }
+            
+            console.log(`${playerName} ist dem Video Call in Lobby ${lobbyCode} beigetreten (${lobby.videoCallParticipants.length} Teilnehmer)`);
+            
+            // Status an alle senden
+            io.to(lobbyCode).emit('video-call-status-update', {
+                participantCount: lobby.videoCallParticipants.length,
+                participants: lobby.videoCallParticipants
+            });
+            
+            // Beitritt an andere melden
+            socket.to(lobbyCode).emit('player-joined-call-notification', { 
+                playerName, 
+                playerId: participantId 
+            });
+        }
     });
     
     socket.on('player-left-call', (data) => {
         const { lobbyCode, playerName, playerId } = data;
-        socket.to(lobbyCode).emit('player-left-call-notification', { 
-            playerName, 
-            playerId: playerId || socket.id 
-        });
-        console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen`);
+        const lobby = lobbies.get(lobbyCode);
+        
+        if (lobby) {
+            const participantId = playerId || socket.id;
+            
+            // Participant entfernen
+            lobby.videoCallParticipants = lobby.videoCallParticipants.filter(p => p.id !== participantId);
+            
+            console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen (${lobby.videoCallParticipants.length} Teilnehmer)`);
+            
+            // Status an alle senden
+            io.to(lobbyCode).emit('video-call-status-update', {
+                participantCount: lobby.videoCallParticipants.length,
+                participants: lobby.videoCallParticipants
+            });
+            
+            // Austritt an andere melden
+            socket.to(lobbyCode).emit('player-left-call-notification', { 
+                playerName, 
+                playerId: participantId 
+            });
+        }
     });
     
     // WebRTC Signaling - Korrigierte Parameter-Behandlung

@@ -286,6 +286,12 @@ socket.on('ice-candidate', (data) => {
     webrtc.handleIceCandidate(data);
 });
 
+// Video Call Status Updates
+socket.on('video-call-status-update', (data) => {
+    console.log('📊 Video Call Status Update:', data);
+    updateVideoCallStatusDisplay(data.participantCount, data.participants);
+});
+
 // DOM Ready Event Listener für Video Call Buttons (nur im Game)
 document.addEventListener('DOMContentLoaded', () => {
     const joinButton = document.getElementById('join-video-call');
@@ -476,12 +482,23 @@ class WebRTCManager {
             name: peerName
         });
 
-        // Stream hinzufügen
+        // Stream hinzufügen mit detailliertem Logging
         if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                console.log(`➕ Track hinzugefügt für ${peerName}: ${track.kind}`);
-                peerConnection.addTrack(track, this.localStream);
+            const tracks = this.localStream.getTracks();
+            console.log(`➕ Füge ${tracks.length} Tracks für ${peerName} hinzu:`, 
+                tracks.map(t => `${t.kind} (${t.enabled ? 'enabled' : 'disabled'})`));
+            
+            tracks.forEach(track => {
+                const sender = peerConnection.addTrack(track, this.localStream);
+                console.log(`✅ Track ${track.kind} hinzugefügt für ${peerName}, Sender:`, sender);
             });
+            
+            // Prüfe ob Transceiver korrekt eingerichtet sind
+            const transceivers = peerConnection.getTransceivers();
+            console.log(`📡 ${transceivers.length} Transceiver für ${peerName}:`, 
+                transceivers.map(t => `${t.direction} (${t.mid})`));
+        } else {
+            console.warn(`⚠️ Kein lokaler Stream verfügbar beim Erstellen der Peer Connection für ${peerName}`);
         }
 
         // Gespeicherte ICE Candidates verarbeiten (Race Condition Fix)
@@ -766,14 +783,28 @@ window.joinVideoCall = async function joinVideoCall() {
     }
 }
 
-// Video Call verlassen Funktion - VEREINFACHT
+// Video Call verlassen Funktion - ERWEITERT
 window.leaveVideoCall = function leaveVideoCall() {
     console.log('🏠 Verlasse Video Call...');
     
     try {
+        // Server benachrichtigen
+        const myPlayerName = isAdmin ? currentLobby?.adminName : getPlayerName();
+        if (currentLobbyCode && myPlayerName) {
+            socket.emit('player-left-call', {
+                lobbyCode: currentLobbyCode,
+                playerName: myPlayerName,
+                playerId: socket.id
+            });
+        }
+        
+        // WebRTC cleanup
         if (webrtc) {
             webrtc.cleanup();
         }
+        
+        // UI zurücksetzen
+        isInCall = false;
         
         // Video-Elemente ausblenden
         const videoCallSection = document.querySelector('.video-call-section');
@@ -785,6 +816,20 @@ window.leaveVideoCall = function leaveVideoCall() {
         if (lobbyVideoCall) {
             lobbyVideoCall.style.display = 'none';
         }
+        
+        // Buttons zurücksetzen
+        const joinBtn = document.getElementById('join-video-call');
+        const leaveBtn = document.getElementById('leave-call');
+        const audioBtn = document.getElementById('toggle-audio');
+        const videoBtn = document.getElementById('toggle-video');
+        
+        if (joinBtn) {
+            joinBtn.style.display = 'block';
+            joinBtn.disabled = false;
+        }
+        if (leaveBtn) leaveBtn.disabled = true;
+        if (audioBtn) audioBtn.disabled = true;
+        if (videoBtn) videoBtn.disabled = true;
         
         showNotification('✅ Video Call verlassen', 'success');
         
@@ -882,6 +927,37 @@ function updateCallUI() {
 function updateCallStatus() {
     // Einfache Status-Aktualisierung ohne komplexe UI
     console.log('📊 Call Status aktualisiert');
+}
+
+function updateVideoCallStatusDisplay(participantCount, participants) {
+    console.log(`📊 Aktualisiere Video Call Status: ${participantCount} Teilnehmer`, participants);
+    
+    // Direkter Zugriff auf das richtige Element
+    const statusElement = document.getElementById('call-participants');
+    
+    if (statusElement) {
+        const maxParticipants = 5; // Admin + 4 Spieler
+        statusElement.textContent = `${participantCount}/${maxParticipants} Teilnehmer`;
+        
+        // Styling basierend auf Teilnehmerzahl
+        if (participantCount > 0) {
+            statusElement.style.color = '#16a34a'; // Grün
+            statusElement.style.fontWeight = 'bold';
+        } else {
+            statusElement.style.color = '#94a3b8'; // Grau
+            statusElement.style.fontWeight = 'normal';
+        }
+        
+        console.log(`✅ Video Call Status aktualisiert: ${participantCount}/${maxParticipants} Teilnehmer`);
+        
+        // Optional: Zeige auch Participant-Namen in der Konsole
+        if (participants && participants.length > 0) {
+            const participantNames = participants.map(p => p.name).join(', ');
+            console.log(`� Teilnehmer: ${participantNames}`);
+        }
+    } else {
+        console.warn('❌ call-participants Element nicht gefunden!');
+    }
 }
 
 function displayMyVideo(stream) {

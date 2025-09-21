@@ -213,29 +213,40 @@ socket.on('error', (message) => {
     showNotification(message, 'error');
 });
 
-// Video Call Events - VEREINFACHT
+// Video Call Events - VERBESSERT mit besserem Timing
 socket.on('player-joined-call-notification', (data) => {
     console.log(`📢 Spieler beigetreten-Notification:`, data);
     showNotification(`📹 ${data.playerName} ist dem Video Call beigetreten!`, 'info');
     
-    if (webrtc && webrtc.isInCall && data.playerId !== socket.id) {
+    // Prüfe ob ich selbst im Call bin und Stream bereit ist
+    if (webrtc && webrtc.isInCall && webrtc.localStream && data.playerId !== socket.id) {
         console.log(`🔗 Erstelle Peer Connection für: ${data.playerName} (${data.playerId})`);
+        console.log(`🔍 Mein Stream Ready: ${webrtc.localStream ? 'Ja' : 'Nein'}`);
+        console.log(`🔍 Meine Socket-ID: ${socket.id}, Andere ID: ${data.playerId}`);
         
         // Prüfe ob Connection bereits existiert
         if (!webrtc.peerConnections.has(data.playerId)) {
             webrtc.createPeerConnection(data.playerId, data.playerName);
             
-            // Als niedrigere Socket-ID initiiert den Call
+            // Als niedrigere Socket-ID initiiert den Call (deterministisch)
             if (socket.id < data.playerId) {
-                console.log(`📞 Initiiere Offer an: ${data.playerName}`);
+                console.log(`📞 Initiiere Offer an: ${data.playerName} (ich habe niedrigere ID)`);
                 setTimeout(() => {
-                    webrtc.createOffer(data.playerId);
-                }, 1500 + Math.random() * 1000);
+                    if (webrtc.peerConnections.has(data.playerId)) {
+                        webrtc.createOffer(data.playerId);
+                    }
+                }, 2000 + Math.random() * 1000);
             } else {
-                console.log(`⏳ Warte auf Offer von: ${data.playerName}`);
+                console.log(`⏳ Warte auf Offer von: ${data.playerName} (andere hat niedrigere ID)`);
             }
         } else {
             console.log(`ℹ️ Peer Connection zu ${data.playerName} existiert bereits`);
+        }
+    } else {
+        if (!webrtc?.isInCall) {
+            console.log(`⚠️ Ich bin noch nicht im Call - ignoriere ${data.playerName}`);
+        } else if (!webrtc?.localStream) {
+            console.log(`⚠️ Mein Stream ist noch nicht bereit - ignoriere ${data.playerName}`);
         }
     }
     
@@ -370,45 +381,36 @@ class WebRTCManager {
         // EXPLIZITE Permission-Anfrage für bessere UX
         console.log('🔐 Frage Webcam/Mikrofon Berechtigung an...');
         
-        // Einfache Strategien - Elgato wird wie normale Webcam behandelt
+        // Flexiblere Strategien - funktioniert mit allen Webcam-Typen
         const strategies = [
-            // Standard HD Qualität
-            {
-                video: { 
-                    width: { ideal: 640 }, 
-                    height: { ideal: 480 },
-                    facingMode: 'user'
-                }, 
-                audio: true,
-                name: 'Standard Qualität (640x480)'
-            },
-            // Mittlere Qualität
-            {
-                video: { 
-                    width: { ideal: 480 }, 
-                    height: { ideal: 360 },
-                    facingMode: 'user'
-                }, 
-                audio: true,
-                name: 'Mittlere Qualität (480x360)'
-            },
-            // Niedrige Qualität fallback
-            {
-                video: { 
-                    width: 320, 
-                    height: 240,
-                    facingMode: 'user'
-                }, 
-                audio: true,
-                name: 'Niedrige Qualität (320x240)'
-            },
-            // Basis Video ohne spezifische Auflösung
+            // Basis Video (funktioniert meistens)
             {
                 video: true, 
                 audio: true,
-                name: 'Basis Video'
+                name: 'Auto-Qualität'
             },
-            // Nur Audio
+            // Standard Qualität
+            {
+                video: { 
+                    width: { ideal: 640 }, 
+                    height: { ideal: 480 }
+                }, 
+                audio: true,
+                name: 'Standard Qualität'
+            },
+            // Ohne Audio falls Mikrofon Problem
+            {
+                video: true, 
+                audio: false,
+                name: 'Nur Video'
+            },
+            // Minimale Constraints
+            {
+                video: {}, 
+                audio: {},
+                name: 'Minimal'
+            },
+            // Nur Audio als letzter Ausweg
             {
                 video: false,
                 audio: true,
@@ -465,7 +467,7 @@ class WebRTCManager {
     }
 
     createPeerConnection(peerId, peerName) {
-        console.log(`🔗 Erstelle Peer Connection für: ${peerName}`);
+        console.log(`🔗 Erstelle Peer Connection für: ${peerName} (ID: ${peerId})`);
         
         const peerConnection = new RTCPeerConnection(rtcConfig);
         
@@ -477,8 +479,26 @@ class WebRTCManager {
         // Stream hinzufügen
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
+                console.log(`➕ Track hinzugefügt für ${peerName}: ${track.kind}`);
                 peerConnection.addTrack(track, this.localStream);
             });
+        }
+
+        // Gespeicherte ICE Candidates verarbeiten (Race Condition Fix)
+        if (this.pendingIceCandidates && this.pendingIceCandidates.has(peerId)) {
+            const candidates = this.pendingIceCandidates.get(peerId);
+            console.log(`🔄 Verarbeite ${candidates.length} gespeicherte ICE Candidates für ${peerName}`);
+            
+            candidates.forEach(async (candidate, index) => {
+                try {
+                    await peerConnection.addIceCandidate(candidate);
+                    console.log(`✅ Gespeicherter ICE Candidate ${index + 1} für ${peerName} hinzugefügt`);
+                } catch (error) {
+                    console.error(`❌ Fehler bei gespeichertem ICE Candidate ${index + 1}:`, error);
+                }
+            });
+            
+            this.pendingIceCandidates.delete(peerId);
         }
 
         // Event Handlers mit verbessertem Debugging
@@ -586,12 +606,24 @@ class WebRTCManager {
     async handleIceCandidate(data) {
         const peerData = this.peerConnections.get(data.from);
         if (!peerData) {
-            console.warn('❌ Peer Connection nicht gefunden für ICE Candidate');
+            console.warn(`❌ Peer Connection nicht gefunden für ICE Candidate von ${data.from}`);
+            console.log(`🔍 Verfügbare Peer Connections:`, Array.from(this.peerConnections.keys()));
+            
+            // ICE Candidate für später speichern (Race Condition Fix)
+            if (!this.pendingIceCandidates) {
+                this.pendingIceCandidates = new Map();
+            }
+            if (!this.pendingIceCandidates.has(data.from)) {
+                this.pendingIceCandidates.set(data.from, []);
+            }
+            this.pendingIceCandidates.get(data.from).push(data.candidate);
+            console.log(`💾 ICE Candidate für ${data.from} gespeichert für später`);
             return;
         }
 
         try {
             await peerData.connection.addIceCandidate(data.candidate);
+            console.log(`✅ ICE Candidate von ${peerData.name} hinzugefügt`);
         } catch (error) {
             console.error('❌ Fehler beim Hinzufügen des ICE Candidates:', error);
         }

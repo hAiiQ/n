@@ -1081,7 +1081,6 @@ function displayMyVideo(stream) {
             video.muted = true; // Audio stumm, aber Video sichtbar
             
             // Speichere meinen Video-Slot für spätere Referenz
-            myVideoSlot = myVideoSlot;
             myVideoSlot.dataset.playerId = socket.id;
             
             video.play().then(() => {

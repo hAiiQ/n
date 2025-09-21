@@ -494,6 +494,17 @@ window.joinVideoCall = async function joinVideoCall() {
         updateCallUI();
         updateCallStatus();
         
+        // Control-Buttons aktivieren
+        const audioBtn = document.getElementById('toggle-audio');
+        const videoBtn = document.getElementById('toggle-video');
+        const leaveBtn = document.getElementById('leave-call');
+        const joinBtn = document.getElementById('join-video-call');
+        
+        if (audioBtn) audioBtn.disabled = false;
+        if (videoBtn) videoBtn.disabled = false;
+        if (leaveBtn) leaveBtn.disabled = false;
+        if (joinBtn) joinBtn.style.display = 'none';
+        
         // 4. Anderen Spielern Beitritt mitteilen
         socket.emit('player-joined-call', {
             lobbyCode: currentLobbyCode,
@@ -507,7 +518,17 @@ window.joinVideoCall = async function joinVideoCall() {
         
     } catch (error) {
         console.error('❌ Video Call Fehler:', error);
-        showNotification('❌ Webcam/Mikrofon Zugriff fehlgeschlagen: ' + error.message, 'error');
+        
+        let errorMsg = 'Webcam/Mikrofon Zugriff fehlgeschlagen';
+        if (error.name === 'NotFoundError') {
+            errorMsg = '❌ Keine Kamera/Mikrofon gefunden';
+        } else if (error.name === 'NotAllowedError') {
+            errorMsg = '❌ Kamera-Zugriff verweigert - bitte Berechtigung erteilen';
+        } else if (error.name === 'NotReadableError') {
+            errorMsg = '❌ Kamera wird bereits verwendet oder ist blockiert';
+        }
+        
+        showNotification(errorMsg + ': ' + error.message, 'error');
     }
 }
 
@@ -581,9 +602,15 @@ window.toggleVideo = function toggleVideo() {
                 }
                 
                 // Lokales Video Element aktualisieren
-                const localVideo = document.getElementById('localVideo');
-                if (localVideo) {
-                    localVideo.style.visibility = videoTrack.enabled ? 'visible' : 'hidden';
+                const mySlot = isAdmin ? 
+                    document.getElementById('admin-video') : 
+                    document.querySelector('.player-video-slot[data-occupied="true"]');
+                    
+                if (mySlot) {
+                    const localVideo = mySlot.querySelector('.player-video');
+                    if (localVideo) {
+                        localVideo.style.visibility = videoTrack.enabled ? 'visible' : 'hidden';
+                    }
                 }
                 
                 showNotification(`📹 Video ${videoTrack.enabled ? 'aktiviert' : 'deaktiviert'}`, 'success');
@@ -624,10 +651,51 @@ function updateCallStatus() {
 }
 
 function displayMyVideo(stream) {
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo) {
-        localVideo.srcObject = stream;
-        localVideo.play();
+    console.log('🎥 Zeige mein Video...');
+    
+    // Bestimme welcher Video-Slot für mich verwendet werden soll
+    let myVideoSlot;
+    if (isAdmin) {
+        myVideoSlot = document.getElementById('admin-video');
+    } else {
+        // Für Spieler: Finde den ersten freien Slot
+        const playerSlots = ['player1-video', 'player2-video', 'player3-video', 'player4-video'];
+        for (const slotId of playerSlots) {
+            const slot = document.getElementById(slotId);
+            if (slot && !slot.dataset.occupied) {
+                myVideoSlot = slot;
+                slot.dataset.occupied = 'true';
+                break;
+            }
+        }
+    }
+    
+    if (myVideoSlot) {
+        const video = myVideoSlot.querySelector('.player-video');
+        const placeholder = myVideoSlot.querySelector('.video-placeholder');
+        
+        if (video && stream) {
+            video.srcObject = stream;
+            video.muted = true; // Eigenes Video stumm schalten
+            video.play().then(() => {
+                console.log('✅ Lokales Video gestartet');
+                video.style.display = 'block';
+                if (placeholder) {
+                    placeholder.style.display = 'none';
+                }
+                myVideoSlot.classList.add('active');
+                
+                // Video Call Sektion anzeigen
+                const videoCallSection = document.querySelector('.video-call-section');
+                if (videoCallSection) {
+                    videoCallSection.style.display = 'block';
+                }
+            }).catch(error => {
+                console.error('❌ Video Play Fehler:', error);
+            });
+        }
+    } else {
+        console.error('❌ Kein Video-Slot gefunden!');
     }
 }
 

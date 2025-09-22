@@ -649,6 +649,21 @@ body::before {
     font-size: 0.9rem;
 }
 
+/* Logo - Fixed Top Center */
+.logo-fixed {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999;
+}
+
+.logo-image {
+    height: 80px;
+    width: auto;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
 .player-video-slot {
     position: relative;
     aspect-ratio: 16/9;
@@ -816,6 +831,10 @@ body::before {
         width: 300px;
     }
     
+    .logo-image {
+        height: 70px;
+    }
+    
     .game-container {
         padding-top: 20px;
         padding-bottom: 180px;
@@ -835,6 +854,14 @@ body::before {
         width: 250px;
         top: 10px;
         left: 10px;
+    }
+    
+    .logo-fixed {
+        top: 10px;
+    }
+    
+    .logo-image {
+        height: 60px;
     }
     
     .call-controls-fixed {

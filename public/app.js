@@ -145,6 +145,7 @@ socket.on('joined-lobby-success', (data) => {
 socket.on('player-joined', (data) => {
     currentLobby = data.lobby;
     updateLobbyScreen();
+    updateVideoPlayerNames(); // Spielernamen aktualisieren
     showNotification(`${data.newPlayer.name} ist beigetreten!`, 'info');
 });
 
@@ -153,6 +154,7 @@ socket.on('player-left', (data) => {
     if (screens.lobby.classList.contains('active')) {
         updateLobbyScreen();
     }
+    updateVideoPlayerNames(); // Spielernamen aktualisieren
     showNotification(`${data.removedPlayer} hat die Lobby verlassen`, 'info');
     
     // Video-Slot des Spielers freigeben (falls vorhanden)
@@ -173,6 +175,9 @@ socket.on('game-started', (lobby) => {
     showScreen('game');
     showNotification('Spiel gestartet! 📹 Video-Call für alle Spieler verfügbar!', 'success');
     
+    // Video-Overlays mit echten Spielernamen aktualisieren
+    updateVideoPlayerNames();
+    
     // Video-Call Integration vorbereiten
     setTimeout(() => {
         setupVideoCallIntegration();
@@ -192,12 +197,14 @@ socket.on('answer-processed', (data) => {
     currentLobby = data.lobby;
     hideQuestion();
     updateGameScreen();
+    updateVideoPlayerNames(); // Punkte aktualisieren
     showNotification('Antwort verarbeitet!', 'info');
 });
 
 socket.on('round-end', (data) => {
     currentLobby = data.lobby;
     updateGameScreen();
+    updateVideoPlayerNames(); // Punkte aktualisieren
     showNotification(`Runde ${data.nextRound} beginnt!`, 'info');
     setTimeout(() => {
         generateGameBoard();
@@ -1615,6 +1622,46 @@ function updateLobbyScreen() {
     // Start Button aktivieren/deaktivieren
     const startBtn = document.getElementById('start-game-btn');
     startBtn.disabled = !isAdmin || currentLobby.players.length === 0;
+    
+    // Video-Overlays mit echten Spielernamen aktualisieren
+    updateVideoPlayerNames();
+}
+
+// Video-Overlays mit echten Spielernamen aktualisieren
+function updateVideoPlayerNames() {
+    if (!currentLobby) return;
+    
+    // Spieler Video Slots aktualisieren (player1-video bis player4-video)
+    for (let i = 0; i < 4; i++) {
+        const slot = document.getElementById(`player${i + 1}-video`);
+        if (!slot) continue;
+        
+        const playerNameElements = slot.querySelectorAll('.player-name');
+        const playerScoreElement = slot.querySelector('.player-score');
+        
+        if (i < currentLobby.players.length) {
+            // Echter Spieler
+            const player = currentLobby.players[i];
+            const playerScore = currentLobby.scores[player.id] || 0;
+            
+            playerNameElements.forEach(element => {
+                element.textContent = player.name;
+            });
+            
+            if (playerScoreElement) {
+                playerScoreElement.textContent = `${playerScore} Punkte`;
+            }
+        } else {
+            // Leerer Slot
+            playerNameElements.forEach(element => {
+                element.textContent = `Wartet...`;
+            });
+            
+            if (playerScoreElement) {
+                playerScoreElement.textContent = '0 Punkte';
+            }
+        }
+    }
 }
 
 // Game Initialization
@@ -1675,19 +1722,7 @@ function updateGameScreen() {
         document.getElementById('active-player-name').textContent = currentPlayer ? currentPlayer.name : 'Unbekannt';
     }
     
-    // Scores anzeigen
-    const scoresList = document.getElementById('scores-list');
-    scoresList.innerHTML = '';
-    
-    currentLobby.players.forEach(player => {
-        const scoreItem = document.createElement('div');
-        scoreItem.className = 'score-item';
-        scoreItem.innerHTML = `
-            <div class="score-name">${player.name}</div>
-            <div class="score-points">${currentLobby.scores[player.id] || 0}</div>
-        `;
-        scoresList.appendChild(scoreItem);
-    });
+    // Scores werden jetzt in den Video-Overlays angezeigt
 }
 
 function selectQuestion(category, points) {

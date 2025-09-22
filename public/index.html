@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Superhelden Jeopardy</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=1.47">
 </head>
 <body>
     <div class="container">
@@ -110,18 +110,26 @@
 
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
+            <!-- Admin Video - Oben Links Fixed Position -->
+            <div class="admin-video-fixed" id="admin-video">
+                <div class="video-placeholder">
+                    <div class="avatar">👑</div>
+                    <div class="player-name">Admin</div>
+                </div>
+                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                <div class="video-overlay">
+                    <div class="player-name">Admin</div>
+                    <div class="player-score">0 Punkte</div>
+                </div>
+            </div>
+            
             <div class="game-container">
-                <!-- Header mit Rundeninfo und Scores -->
+                <!-- Header mit Rundeninfo -->
                 <div class="game-header">
                     <div class="round-info">
                         <h2>Runde <span id="current-round">1</span></h2>
                         <div class="current-player">
                             Am Zug: <span id="active-player-name">Spieler 1</span>
-                        </div>
-                    </div>
-                    <div class="scores-display">
-                        <div id="scores-list">
-                            <!-- Scores werden hier eingefügt -->
                         </div>
                     </div>
                 </div>
@@ -148,98 +156,74 @@
                     </div>
                 </div>
 
-                <!-- Video Call Integration -->
-                <div class="video-call-section">
-                    <div class="call-header">
-                        <h3>📹 Spieler Video Call</h3>
-                        <div class="call-status" id="call-status">
-                            <span class="status-indicator">🔴</span>
-                            <span id="call-participants">0/5 Teilnehmer</span>
-                        </div>
+
+            </div>
+            
+            <!-- Spieler Videos - Unten Fixed Position -->
+            <div class="players-video-bar">
+                <div class="player-video-slot" id="player1-video">
+                    <div class="video-placeholder">
+                        <div class="avatar">🎮</div>
+                        <div class="player-name">Spieler 1</div>
                     </div>
-                    
-                    <div class="call-container" id="call-container">
-                        <!-- Automatischer privater Call für alle 5 Spieler -->
-                        <div class="call-grid" id="call-grid">
-                            <div class="player-video-slot" id="admin-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">👑</div>
-                                    <div class="player-label">Admin</div>
-                                    <div class="video-status">Warte auf Verbindung...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player1-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 1</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player2-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 2</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player3-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 3</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                            
-                            <div class="player-video-slot" id="player4-video">
-                                <div class="video-placeholder">
-                                    <div class="avatar">🎮</div>
-                                    <div class="player-label">Spieler 4</div>
-                                    <div class="video-status">Wartet auf Beitritt...</div>
-                                </div>
-                                <video class="player-video" autoplay muted playsinline style="display: none;"></video>
-                            </div>
-                        </div>
-                        
-                        <div class="call-controls">
-                            <button id="test-webcam" class="btn btn-secondary">
-                                <i class="icon">🔍</i>
-                                Webcam testen
-                            </button>
-                            <button id="join-video-call" class="btn btn-success">
-                                <i class="icon">📹</i>
-                                Video Call beitreten
-                            </button>
-                            <button id="toggle-audio" class="btn btn-ghost" disabled>
-                                <i class="icon">🎤</i>
-                                Mikro
-                            </button>
-                            <button id="toggle-video" class="btn btn-ghost" disabled>
-                                <i class="icon">📹</i>
-                                Kamera
-                            </button>
-                            <button id="leave-call" class="btn btn-danger" style="display: none;">
-                                <i class="icon">📵</i>
-                                Call verlassen
-                            </button>
-                            <button id="refresh-cams" class="btn btn-primary" style="display: none;">
-                                <i class="icon">🔄</i>
-                                Cams aktualisieren
-                            </button>
-                        </div>
-                        
-                        <div class="call-instructions">
-                            <p><strong>🎯 Automatischer Privat-Call:</strong></p>
-                            <p>Alle 5 Spieler (Admin + 4 Spieler) werden automatisch in einem privaten Video-Call verbunden. Klickt einfach auf "Video Call beitreten" um eure Kamera und Mikro zu aktivieren!</p>
-                        </div>
+                    <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                    <div class="video-overlay">
+                        <div class="player-name">Spieler 1</div>
+                        <div class="player-score">0 Punkte</div>
                     </div>
                 </div>
+                
+                <div class="player-video-slot" id="player2-video">
+                    <div class="video-placeholder">
+                        <div class="avatar">🎮</div>
+                        <div class="player-name">Spieler 2</div>
+                    </div>
+                    <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                    <div class="video-overlay">
+                        <div class="player-name">Spieler 2</div>
+                        <div class="player-score">0 Punkte</div>
+                    </div>
+                </div>
+                
+                <div class="player-video-slot" id="player3-video">
+                    <div class="video-placeholder">
+                        <div class="avatar">🎮</div>
+                        <div class="player-name">Spieler 3</div>
+                    </div>
+                    <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                    <div class="video-overlay">
+                        <div class="player-name">Spieler 3</div>
+                        <div class="player-score">0 Punkte</div>
+                    </div>
+                </div>
+                
+                <div class="player-video-slot" id="player4-video">
+                    <div class="video-placeholder">
+                        <div class="avatar">🎮</div>
+                        <div class="player-name">Spieler 4</div>
+                    </div>
+                    <video class="player-video" autoplay muted playsinline style="display: none;"></video>
+                    <div class="video-overlay">
+                        <div class="player-name">Spieler 4</div>
+                        <div class="player-score">0 Punkte</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Video Call Controls - Fixed Position -->
+            <div class="call-controls-fixed">
+                <button id="join-video-call" class="btn btn-success">
+                    <i class="icon">📹</i>
+                    Video Call
+                </button>
+                <button id="leave-call" class="btn btn-danger" style="display: none;">
+                    <i class="icon">📵</i>
+                    Leave
+                </button>
+                <button id="refresh-cams" class="btn btn-primary" style="display: none;">
+                    <i class="icon">🔄</i>
+                    Refresh
+                </button>
             </div>
         </div>
 
@@ -264,6 +248,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=2025092110"></script>
+    <script src="app.js?v=1.47"></script>
 </body>
 </html>

@@ -408,6 +408,9 @@ body::before {
     display: flex;
     flex-direction: column;
     padding: 20px;
+    /* Platz für Admin-Cam oben links und Spieler-Cams unten lassen */
+    padding-top: 20px; /* Direkt am oberen Rand */
+    padding-bottom: 190px; /* Spieler-Cams Höhe + Abstand */
 }
 
 .game-header {
@@ -432,30 +435,7 @@ body::before {
     font-size: 1.1rem;
 }
 
-.scores-display {
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-}
 
-.score-item {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 10px 15px;
-    border-radius: 8px;
-    text-align: center;
-    min-width: 120px;
-}
-
-.score-name {
-    font-weight: 500;
-    margin-bottom: 3px;
-}
-
-.score-points {
-    font-family: 'Orbitron', monospace;
-    font-size: 1.2rem;
-    color: var(--accent-color);
-}
 
 /* Game Board */
 .game-board {
@@ -627,25 +607,82 @@ body::before {
     }
 }
 
-.call-container {
-    margin-bottom: 20px;
+/* Admin Video - Fixed Top Left */
+.admin-video-fixed {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 350px;
+    aspect-ratio: 16/9;
+    z-index: 1000;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.call-grid {
+/* Players Video Bar - Fixed Bottom */
+.players-video-bar {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    z-index: 1000;
+}
+
+/* Video Call Controls - Fixed Top Right */
+.call-controls-fixed {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+    z-index: 1001;
+}
+
+.call-controls-fixed .btn {
+    padding: 8px 16px;
+    font-size: 0.9rem;
 }
 
 .player-video-slot {
     position: relative;
-    aspect-ratio: 4/3;
+    aspect-ratio: 16/9;
     border-radius: 12px;
     overflow: hidden;
     background: rgba(0, 0, 0, 0.3);
     border: 2px solid var(--border-color);
     transition: all 0.3s ease;
+    width: 100%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Video Overlay für Namen und Punkte */
+.video-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+    padding: 10px;
+    z-index: 10;
+}
+
+.video-overlay .player-name {
+    color: white;
+    font-weight: bold;
+    font-size: 0.9rem;
+    margin-bottom: 2px;
+}
+
+.video-overlay .player-score {
+    color: var(--accent-color);
+    font-size: 0.8rem;
+    font-weight: 600;
 }
 
 .player-video-slot.active {
@@ -769,37 +806,62 @@ body::before {
     color: var(--danger-color);
 }
 
-/* Responsive Design für Video Call */
-@media (max-width: 768px) {
-    .call-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
+/* Responsive Design für Fixed Video Layout */
+@media (max-width: 1200px) {
+    .players-video-bar {
+        gap: 15px;
     }
     
-    .call-header {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
+    .admin-video-fixed {
+        width: 300px;
     }
     
-    .call-controls {
-        flex-direction: column;
-        align-items: center;
-    }
-    
-    .call-controls .btn {
-        width: 100%;
-        max-width: 250px;
+    .game-container {
+        padding-top: 20px;
+        padding-bottom: 180px;
     }
 }
 
-@media (max-width: 480px) {
-    .call-grid {
-        grid-template-columns: 1fr;
+@media (max-width: 768px) {
+    .players-video-bar {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
     }
     
-    .player-video-slot {
-        min-height: 200px;
+    .admin-video-fixed {
+        width: 250px;
+        top: 10px;
+        left: 10px;
+    }
+    
+    .call-controls-fixed {
+        top: 10px;
+        right: 10px;
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .call-controls-fixed .btn {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    
+    .game-container {
+        padding-top: 10px;
+        padding-bottom: 130px;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    .video-overlay .player-name {
+        font-size: 0.8rem;
+    }
+    
+    .video-overlay .player-score {
+        font-size: 0.7rem;
     }
 }
 
@@ -924,9 +986,7 @@ body::before {
         text-align: center;
     }
     
-    .scores-display {
-        justify-content: center;
-    }
+
     
     .game-board {
         grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));

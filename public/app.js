@@ -1699,12 +1699,15 @@ function generateGameBoard() {
             
             if (currentLobby.answeredQuestions.includes(questionKey)) {
                 cell.disabled = true;
+                cell.classList.add('answered');
             } else if (isAdmin) {
                 cell.addEventListener('click', () => {
                     selectQuestion(category, points);
                 });
             } else {
-                cell.disabled = true;
+                // Spieler können die Fragen sehen aber nicht anklicken
+                cell.classList.add('player-view');
+                cell.style.pointerEvents = 'none';
             }
             
             gameBoard.appendChild(cell);

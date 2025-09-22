@@ -53,11 +53,11 @@ io.on('connection', (socket) => {
             answeredQuestions: [],
             videoCallParticipants: [], // Tracking für Video Call Teilnehmer
             categories: [
-                'Marvel Helden',
-                'DC Comics', 
-                'Superhelden-Filme',
-                'Comic Geschichte',
-                'Superkräfte'
+                'Marvel Rivals Helden',
+                'Fähigkeiten & Ultimates', 
+                'Maps & Modi',
+                'Teams & Strategien',
+                'Game Mechanics'
             ]
         };
         
@@ -381,42 +381,42 @@ function generateLobbyCode() {
 }
 
 function getQuestion(category, points, round) {
-    // Vereinfachte Fragen - in der Praxis würde man eine richtige Datenbank verwenden
+    // Marvel Rivals spezifische Fragen - basierend auf dem beliebten Hero Shooter
     const questions = {
-        'Marvel Helden': {
-            100: 'Wie heißt der echte Name von Spider-Man?',
-            200: 'Welche Farben hat Captain Americas Schild?',
-            300: 'Aus welchem Metall bestehen Wolverines Klauen?',
-            400: 'Wie heißt Thors Hammer?',
-            500: 'Welche Superkraft hat Professor X?'
+        'Marvel Rivals Helden': {
+            100: 'Welcher Held kann Netze schießen und an Wänden laufen?',
+            200: 'Welcher Charakter trägt einen Schild und kann ihn werfen?',
+            300: 'Welcher Held kann sich in Eis verwandeln und Eiswände bauen?',
+            400: 'Welcher Magier kann Portale öffnen und die Realität verbiegen?',
+            500: 'Welcher Charakter kann zwischen Normal- und Hulk-Form wechseln?'
         },
-        'DC Comics': {
-            100: 'Wie heißt Supermans Heimatplanet?',
-            200: 'In welcher Stadt lebt Batman?',
-            300: 'Wie heißt Wonder Womans Lasso?',
-            400: 'Welche Farbe hat Green Lanterns Ring?',
-            500: 'Wie heißt The Flash mit echtem Namen?'
+        'Fähigkeiten & Ultimates': {
+            100: 'Was passiert wenn Spider-Man sein Ultimate aktiviert?',
+            200: 'Welche Fähigkeit hat Iron Mans Repulsor-Strahl?',
+            300: 'Was bewirkt Storms Ultimate "Lightning Storm"?',
+            400: 'Welche Heilfähigkeit hat Rocket Raccoon?',
+            500: 'Was ist das mächtigste Ultimate von Doctor Strange?'
         },
-        'Superhelden-Filme': {
-            100: 'Wer spielte Iron Man in den Marvel-Filmen?',
-            200: 'Wie viele Infinity Stones gibt es?',
-            300: 'In welchem Jahr kam der erste Iron Man Film raus?',
-            400: 'Wie heißt der Bösewicht im ersten Avengers Film?',
-            500: 'Welcher Schauspieler spielte Batman in The Dark Knight?'
+        'Maps & Modi': {
+            100: 'Wie heißt der Hauptspielmodus in Marvel Rivals?',
+            200: 'Auf welcher bekannten Marvel-Location basiert eine der Maps?',
+            300: 'Wie viele Capture Points gibt es normalerweise pro Map?',
+            400: 'Welche Map spielt in New York City?',
+            500: 'Auf welcher kosmischen Location kämpft man in Marvel Rivals?'
         },
-        'Comic Geschichte': {
-            100: 'In welchem Jahr wurde Superman erschaffen?',
-            200: 'Wer schuf Spider-Man?',
-            300: 'Welcher Verlag veröffentlichte die ersten X-Men Comics?',
-            400: 'In welchem Jahrzehnt wurden die meisten bekannten Superhelden erschaffen?',
-            500: 'Wie hieß das erste Comic mit Batman?'
+        'Teams & Strategien': {
+            100: 'Aus wie vielen Spielern besteht ein Team?',
+            200: 'Welche Rolle ist am besten zum Heilen geeignet?',
+            300: 'Welcher Held eignet sich am besten als Tank?',
+            400: 'Was ist eine effektive Counter-Strategie gegen fliegende Helden?',
+            500: 'Welche Team-Combo aus Tank, DPS und Support ist am stärksten?'
         },
-        'Superkräfte': {
-            100: 'Welche Superkraft hat Superman nicht: Fliegen, Röntgenblick, Telepathie?',
-            200: 'Was ist Hulks größte Schwäche?',
-            300: 'Welches Element ist Supermans Schwäche?',
-            400: 'Welche Superkraft haben sowohl Quicksilver als auch The Flash?',
-            500: 'Welche Farbe hat die Energie von Scarlet Witch?'
+        'Game Mechanics': {
+            100: 'Wie regeneriert man Gesundheit in Marvel Rivals?',
+            200: 'Was passiert wenn man aus der Map fällt?',
+            300: 'Wie lädt sich die Ultimate-Fähigkeit auf?',
+            400: 'Was ist der Unterschied zwischen Schild und Rüstung?',
+            500: 'Wie funktioniert das Respawn-System in Marvel Rivals?'
         }
     };
     

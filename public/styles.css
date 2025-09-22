@@ -1,18 +1,18 @@
 :root {
-    --primary-color: #ff6b35;
-    --secondary-color: #004e98;
-    --accent-color: #f7931e;
-    --danger-color: #dc2626;
-    --success-color: #16a34a;
-    --dark-bg: #0a0e27;
-    --card-bg: #1a1f3a;
-    --text-light: #e2e8f0;
-    --text-muted: #94a3b8;
-    --border-color: #2d3748;
-    --shadow-color: rgba(0, 0, 0, 0.5);
-    --gradient-primary: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-    --gradient-secondary: linear-gradient(135deg, #004e98 0%, #3a86ff 100%);
-    --gradient-dark: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+    --primary-color: #2563eb;     /* Marvel Blue */
+    --secondary-color: #dc2626;   /* Marvel Red */
+    --accent-color: #60a5fa;      /* Light Blue Accent */
+    --danger-color: #dc2626;      /* Red */
+    --success-color: #16a34a;     /* Green */
+    --dark-bg: #0f0f0f;           /* Deep Black like Logo */
+    --card-bg: #1f1f1f;          /* Dark Card Background */
+    --text-light: #f8fafc;       /* Bright White Text */
+    --text-muted: #94a3b8;       /* Muted Text */
+    --border-color: #374151;     /* Border */
+    --shadow-color: rgba(0, 0, 0, 0.7);
+    --gradient-primary: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%);    /* Blue Gradient */
+    --gradient-secondary: linear-gradient(135deg, #dc2626 0%, #f87171 100%);  /* Red Gradient */
+    --gradient-dark: linear-gradient(135deg, #0f0f0f 0%, #1f1f1f 100%);      /* Dark Gradient */
 }
 
 * {
@@ -37,9 +37,9 @@ body::before {
     width: 100%;
     height: 100%;
     background: 
-        radial-gradient(circle at 20% 20%, rgba(255, 107, 53, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(58, 134, 255, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 40% 90%, rgba(247, 147, 30, 0.05) 0%, transparent 50%);
+        radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.1) 0%, transparent 50%),    /* Marvel Blue */
+        radial-gradient(circle at 80% 80%, rgba(220, 38, 38, 0.1) 0%, transparent 50%),    /* Marvel Red */
+        radial-gradient(circle at 40% 90%, rgba(96, 165, 250, 0.05) 0%, transparent 50%);  /* Light Blue */
     pointer-events: none;
     z-index: -1;
 }
@@ -87,9 +87,9 @@ body::before {
     font-weight: 900;
     margin-bottom: 20px;
     text-shadow: 
-        0 0 20px rgba(255, 107, 53, 0.5),
-        0 0 40px rgba(255, 107, 53, 0.3),
-        0 0 60px rgba(255, 107, 53, 0.1);
+        0 0 20px rgba(37, 99, 235, 0.5),
+        0 0 40px rgba(37, 99, 235, 0.3),
+        0 0 60px rgba(220, 38, 38, 0.2);
 }
 
 .hero-text {
@@ -158,23 +158,27 @@ body::before {
 .btn-primary {
     background: var(--gradient-primary);
     color: white;
-    box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+    border: 1px solid rgba(96, 165, 250, 0.3);
 }
 
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(255, 107, 53, 0.6);
+    box-shadow: 0 8px 25px rgba(37, 99, 235, 0.6);
+    border: 1px solid rgba(96, 165, 250, 0.5);
 }
 
 .btn-secondary {
     background: var(--gradient-secondary);
     color: white;
-    box-shadow: 0 4px 15px rgba(0, 78, 152, 0.4);
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+    border: 1px solid rgba(248, 113, 113, 0.3);
 }
 
 .btn-secondary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 78, 152, 0.6);
+    box-shadow: 0 8px 25px rgba(220, 38, 38, 0.6);
+    border: 1px solid rgba(248, 113, 113, 0.5);
 }
 
 .btn-success {
@@ -339,7 +343,8 @@ body::before {
 
 .player-card.admin {
     border-color: var(--primary-color);
-    background: rgba(255, 107, 53, 0.1);
+    background: rgba(37, 99, 235, 0.1);
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2);
 }
 
 .player-name {
@@ -442,19 +447,22 @@ body::before {
     flex: 1;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    margin-bottom: 20px;
-    max-height: 60vh;
+    gap: 8px;
+    margin-bottom: 15px;
+    max-height: 45vh;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .category-header {
     background: var(--gradient-primary);
     color: white;
-    padding: 15px;
+    padding: 12px;
     border-radius: 8px;
     text-align: center;
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -464,20 +472,21 @@ body::before {
 .question-cell {
     background: var(--gradient-secondary);
     color: white;
-    border: none;
+    border: 1px solid rgba(248, 113, 113, 0.2);
     border-radius: 8px;
-    padding: 20px;
+    padding: 15px;
     font-family: 'Orbitron', monospace;
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 78, 152, 0.3);
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
 }
 
 .question-cell:hover {
     transform: scale(1.05);
-    box-shadow: 0 8px 25px rgba(0, 78, 152, 0.5);
+    box-shadow: 0 8px 25px rgba(220, 38, 38, 0.5);
+    border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
 .question-cell:disabled {
@@ -617,9 +626,9 @@ body::before {
     z-index: 1000;
     border-radius: 12px;
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(15, 15, 15, 0.8);
     border: 2px solid var(--primary-color);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.3);
 }
 
 /* Players Video Bar - Fixed Bottom */
@@ -659,9 +668,9 @@ body::before {
 }
 
 .logo-image {
-    height: 80px;
+    height: 160px;
     width: auto;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
 }
 
 .player-video-slot {
@@ -669,11 +678,11 @@ body::before {
     aspect-ratio: 16/9;
     border-radius: 12px;
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.3);
-    border: 2px solid var(--border-color);
+    background: rgba(15, 15, 15, 0.8);
+    border: 2px solid var(--secondary-color);
     transition: all 0.3s ease;
     width: 100%;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 32px rgba(220, 38, 38, 0.2);
 }
 
 /* Video Overlay für Namen und Punkte */
@@ -682,9 +691,10 @@ body::before {
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+    background: linear-gradient(to top, rgba(15, 15, 15, 0.9) 0%, rgba(220, 38, 38, 0.1) 50%, transparent 100%);
     padding: 10px;
     z-index: 10;
+    border-top: 1px solid rgba(220, 38, 38, 0.3);
 }
 
 .video-overlay .player-name {
@@ -832,7 +842,7 @@ body::before {
     }
     
     .logo-image {
-        height: 70px;
+        height: 140px;
     }
     
     .game-container {
@@ -861,7 +871,7 @@ body::before {
     }
     
     .logo-image {
-        height: 60px;
+        height: 120px;
     }
     
     .call-controls-fixed {

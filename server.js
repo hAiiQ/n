@@ -381,8 +381,8 @@ function generateLobbyCode() {
 }
 
 function getQuestion(category, points, round) {
-    // Marvel Rivals spezifische Fragen - basierend auf dem beliebten Hero Shooter
-    const questions = {
+    // Marvel Rivals spezifische Fragen - Runde 1: Basis-Fragen, Runde 2: Experten-Fragen
+    const questionsRound1 = {
         'Marvel Rivals Helden': {
             100: 'Welcher Held kann Netze schießen und an Wänden laufen?',
             200: 'Welcher Charakter trägt einen Schild und kann ihn werfen?',
@@ -419,10 +419,50 @@ function getQuestion(category, points, round) {
             500: 'Wie funktioniert das Respawn-System in Marvel Rivals?'
         }
     };
+
+    const questionsRound2 = {
+        'Marvel Rivals Helden': {
+            100: 'Welcher Charakter hat die Fähigkeit "Web-Slinging Mastery"?',
+            200: 'Wer ist der stärkste Tank-Charakter im Marvel Rivals Roster?',
+            300: 'Welcher Held kann sowohl fliegen als auch Elementar-Schäden verursachen?',
+            400: 'Welcher Support-Charakter kann Teammitglieder wiederbeleben?',
+            500: 'Welcher Charakter hat die komplexeste Ultimate-Mechanik im Spiel?'
+        },
+        'Fähigkeiten & Ultimates': {
+            100: 'Welche Fähigkeit ermöglicht es Magneto Metall zu kontrollieren?',
+            200: 'Was ist der Cooldown von Wolverines Heilungsfähigkeit?',
+            300: 'Welches Ultimate kann die komplette Map-Kontrolle übernehmen?',
+            400: 'Welche Combo aus Fähigkeiten ist am effektivsten für Team-Wipes?',
+            500: 'Welcher Charakter kann Ultimate-Fähigkeiten anderer Helden kopieren?'
+        },
+        'Maps & Modi': {
+            100: 'Welcher Spielmodus hat die längste durchschnittliche Match-Dauer?',
+            200: 'Auf welcher Map gibt es versteckte Easter-Eggs zu Marvel Comics?',
+            300: 'Welche Map-Rotation wird in kompetitiven Turnieren verwendet?',
+            400: 'Welche Environmental-Hazards gibt es auf Asgard?',
+            500: 'Welche Map hat die komplexesten Vertikale-Gameplay-Elemente?'
+        },
+        'Teams & Strategien': {
+            100: 'Welche Meta-Strategie dominiert das aktuelle Competitive-Gameplay?',
+            200: 'Welche Synergien gibt es zwischen X-Men Charakteren?',
+            300: 'Was ist die optimale Team-Rotation für Capture-Point-Maps?',
+            400: 'Welche Advanced-Positioning-Taktiken nutzen Pro-Teams?',
+            500: 'Welche Ultimate-Combos können komplette Team-Fights entscheiden?'
+        },
+        'Game Mechanics': {
+            100: 'Wie funktioniert das Advanced-Movement-System in Marvel Rivals?',
+            200: 'Was ist der Unterschied zwischen Hard- und Soft-Counters?',
+            300: 'Wie berechnet sich der Damage-Falloff bei Projektil-Waffen?',
+            400: 'Welche Frame-Data ist für kompetitives Spiel am wichtigsten?',
+            500: 'Wie funktioniert das komplexe Hitbox- und Collision-System?'
+        }
+    };
     
+    const questions = round === 1 ? questionsRound1 : questionsRound2;
     const basePoints = round === 1 ? points : points / 2;
+    
     return questions[category] && questions[category][basePoints] ? 
-           questions[category][basePoints] : 'Beispielfrage für ' + category;
+           questions[category][basePoints] : `Experten-Frage für ${category} - Runde ${round}`;
 }
 
 const PORT = process.env.PORT || 3000;

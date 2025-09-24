@@ -73,24 +73,38 @@ document.getElementById('back-to-start-join').addEventListener('click', () => {
 
 // Lobby erstellen
 document.getElementById('create-lobby-form').addEventListener('submit', (e) => {
+    console.log('Create lobby form submitted');
     e.preventDefault();
     const adminName = document.getElementById('admin-name').value.trim();
     
+    console.log('Admin name:', adminName);
+    console.log('Socket connected:', socket.connected);
+    
     if (adminName) {
+        console.log('Emitting create-lobby event');
         isAdmin = true;
         socket.emit('create-lobby', { adminName });
+    } else {
+        console.log('Admin name is empty');
     }
 });
 
 // Lobby beitreten
 document.getElementById('join-lobby-form').addEventListener('submit', (e) => {
+    console.log('Form submit event triggered');
     e.preventDefault();
-    const playerName = document.getElementById('player-name').value.trim();
+    const playerName = document.getElementById('join-player-name').value.trim();
     const lobbyCode = document.getElementById('lobby-code').value.trim().toUpperCase();
     
+    console.log('Join lobby - PlayerName:', playerName, 'LobbyCode:', lobbyCode);
+    console.log('Socket connected:', socket.connected);
+    
     if (playerName && lobbyCode) {
+        console.log('Emitting join-lobby event');
         isAdmin = false;
         socket.emit('join-lobby', { playerName, lobbyCode });
+    } else {
+        console.log('Missing playerName or lobbyCode');
     }
 });
 
@@ -114,6 +128,11 @@ document.getElementById('leave-lobby-btn').addEventListener('click', () => {
 });
 
 // Socket Event Listeners
+socket.on('error', (error) => {
+    console.error('Socket error:', error);
+    showNotification(error.message || 'Verbindungsfehler', 'error');
+});
+
 socket.on('lobby-created', (data) => {
     currentLobbyCode = data.lobbyCode;
     currentLobby = data.lobby;
@@ -190,12 +209,14 @@ socket.on('game-started', (lobby) => {
 });
 
 socket.on('question-selected', (data) => {
+    // Frage anzeigen (das Spielbrett wird automatisch bei lobby-updated neu generiert)
     showQuestion(data);
 });
 
 socket.on('answer-processed', (data) => {
     currentLobby = data.lobby;
     hideQuestion();
+    generateGameBoard(); // Spielbrett mit deaktivierten Fragen aktualisieren
     updateGameScreen();
     updateVideoPlayerNames(); // Punkte aktualisieren
     showNotification('Antwort verarbeitet!', 'info');
@@ -1631,34 +1652,50 @@ function updateLobbyScreen() {
 function updateVideoPlayerNames() {
     if (!currentLobby) return;
     
+    // Admin Video aktualisieren
+    const adminVideo = document.getElementById('admin-video');
+    if (adminVideo && currentLobby.adminName) {
+        let adminInfoElement = adminVideo.querySelector('.player-info');
+        if (!adminInfoElement) {
+            // Falls das Element nicht existiert, erstelle es
+            const overlay = adminVideo.querySelector('.video-overlay');
+            if (overlay) {
+                adminInfoElement = document.createElement('div');
+                adminInfoElement.className = 'player-info';
+                overlay.appendChild(adminInfoElement);
+            }
+        }
+        
+        if (adminInfoElement) {
+            adminInfoElement.textContent = `${currentLobby.adminName}: 👑 Host`;
+        }
+    }
+    
     // Spieler Video Slots aktualisieren (player1-video bis player4-video)
     for (let i = 0; i < 4; i++) {
         const slot = document.getElementById(`player${i + 1}-video`);
         if (!slot) continue;
         
-        const playerNameElements = slot.querySelectorAll('.player-name');
-        const playerScoreElement = slot.querySelector('.player-score');
-        
-        if (i < currentLobby.players.length) {
-            // Echter Spieler
-            const player = currentLobby.players[i];
-            const playerScore = currentLobby.scores[player.id] || 0;
-            
-            playerNameElements.forEach(element => {
-                element.textContent = player.name;
-            });
-            
-            if (playerScoreElement) {
-                playerScoreElement.textContent = `${playerScore} Punkte`;
+        let playerInfoElement = slot.querySelector('.player-info');
+        if (!playerInfoElement) {
+            // Falls das Element nicht existiert, erstelle es
+            const overlay = slot.querySelector('.video-overlay');
+            if (overlay) {
+                playerInfoElement = document.createElement('div');
+                playerInfoElement.className = 'player-info';
+                overlay.appendChild(playerInfoElement);
             }
-        } else {
-            // Leerer Slot
-            playerNameElements.forEach(element => {
-                element.textContent = `Wartet...`;
-            });
-            
-            if (playerScoreElement) {
-                playerScoreElement.textContent = '0 Punkte';
+        }
+        
+        if (playerInfoElement) {
+            if (i < currentLobby.players.length) {
+                // Echter Spieler
+                const player = currentLobby.players[i];
+                const playerScore = currentLobby.scores[player.id] || 0;
+                playerInfoElement.textContent = `${player.name}: ${playerScore}`;
+            } else {
+                // Leerer Slot
+                playerInfoElement.textContent = 'Wartet...';
             }
         }
     }
@@ -1699,16 +1736,13 @@ function generateGameBoard() {
             
             if (currentLobby.answeredQuestions.includes(questionKey)) {
                 cell.disabled = true;
-                cell.classList.add('answered');
+                cell.classList.add('disabled');
             } else if (isAdmin) {
                 cell.addEventListener('click', () => {
                     selectQuestion(category, points);
                 });
-            } else {
-                // Spieler können die Fragen sehen aber nicht anklicken
-                cell.classList.add('player-view');
-                cell.style.pointerEvents = 'none';
             }
+            // Spieler sehen alle Buttons als aktiv, können aber nur der Admin kann Fragen auswählen
             
             gameBoard.appendChild(cell);
         });
@@ -1716,16 +1750,31 @@ function generateGameBoard() {
 }
 
 function updateGameScreen() {
-    // Runde anzeigen
-    document.getElementById('current-round').textContent = currentLobby.currentRound;
-    
-    // Aktuellen Spieler anzeigen
-    if (currentLobby.players.length > 0) {
-        const currentPlayer = currentLobby.players[currentLobby.currentPlayer];
-        document.getElementById('active-player-name').textContent = currentPlayer ? currentPlayer.name : 'Unbekannt';
-    }
+    // Aktiven Spieler hervorheben (da Header entfernt wurde)
+    highlightActivePlayer();
     
     // Scores werden jetzt in den Video-Overlays angezeigt
+}
+
+function highlightActivePlayer() {
+    // Alle Player-Slots zurücksetzen
+    for (let i = 0; i < 4; i++) {
+        const slot = document.getElementById(`player${i + 1}-video`);
+        if (slot) {
+            slot.classList.remove('active');
+        }
+    }
+    
+    // Aktiven Spieler hervorheben
+    if (currentLobby && currentLobby.players.length > 0) {
+        const activePlayerIndex = currentLobby.currentPlayer;
+        if (activePlayerIndex >= 0 && activePlayerIndex < currentLobby.players.length) {
+            const activeSlot = document.getElementById(`player${activePlayerIndex + 1}-video`);
+            if (activeSlot) {
+                activeSlot.classList.add('active');
+            }
+        }
+    }
 }
 
 function selectQuestion(category, points) {
@@ -1743,7 +1792,36 @@ function showQuestion(data) {
     
     document.getElementById('question-category').textContent = data.category;
     document.getElementById('question-points').textContent = data.points;
-    document.getElementById('question-text').textContent = data.question.question || data.question;
+    
+    // Prüfen ob es eine Bild-Frage ist
+    if (data.question && typeof data.question === 'object' && data.question.image) {
+        // Bild-Frage
+        document.getElementById('question-text').textContent = data.question.question;
+        
+        // Bild-Element erstellen oder aktualisieren
+        let questionImage = document.getElementById('question-image');
+        if (!questionImage) {
+            questionImage = document.createElement('img');
+            questionImage.id = 'question-image';
+            questionImage.style.maxWidth = '100%';
+            questionImage.style.maxHeight = '400px';
+            questionImage.style.borderRadius = '10px';
+            questionImage.style.marginTop = '20px';
+            document.getElementById('question-text').parentNode.appendChild(questionImage);
+        }
+        
+        questionImage.src = `/bilder/${data.question.image}`;
+        questionImage.style.display = 'block';
+    } else {
+        // Text-Frage
+        document.getElementById('question-text').textContent = data.question.question || data.question;
+        
+        // Bild verstecken falls vorhanden
+        const questionImage = document.getElementById('question-image');
+        if (questionImage) {
+            questionImage.style.display = 'none';
+        }
+    }
     
     // Admin Controls anzeigen/verstecken
     const adminControls = document.getElementById('admin-controls');

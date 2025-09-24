@@ -40,6 +40,7 @@ io.on('connection', (socket) => {
     
     // Lobby erstellen
     socket.on('create-lobby', (data) => {
+        console.log('Create-lobby data:', data);
         const lobbyCode = generateLobbyCode();
         const lobby = {
             id: lobbyCode,
@@ -53,325 +54,241 @@ io.on('connection', (socket) => {
             answeredQuestions: [],
             videoCallParticipants: [], // Tracking für Video Call Teilnehmer
             categories: [
-                'Marvel Rivals Helden',
-                'Fähigkeiten & Ultimates', 
-                'Maps & Modi',
-                'Teams & Strategien',
-                'Game Mechanics'
+                'Rund um Marvel',
+                'Team-Ups', 
+                'Game-Mechanics',
+                'Voice-Lines',
+                'Wo ist das?'
             ]
         };
         
         lobbies.set(lobbyCode, lobby);
         socket.join(lobbyCode);
         
-        socket.emit('lobby-created', { lobbyCode, lobby });
+        socket.emit('lobby-created', { 
+            lobbyCode, 
+            lobby,
+            isAdmin: true 
+        });
+        
         console.log(`Lobby ${lobbyCode} erstellt von ${data.adminName}`);
     });
     
     // Lobby beitreten
     socket.on('join-lobby', (data) => {
-        const { lobbyCode, playerName } = data;
-        const lobby = lobbies.get(lobbyCode);
+        console.log('Join-lobby data:', data);
+        console.log('Verfügbare Lobbies:', Array.from(lobbies.keys()));
+        const lobby = lobbies.get(data.lobbyCode);
         
         if (!lobby) {
-            socket.emit('error', 'Lobby nicht gefunden');
+            socket.emit('error', { message: 'Lobby nicht gefunden' });
             return;
         }
         
         if (lobby.players.length >= 4) {
-            socket.emit('error', 'Lobby ist voll');
+            socket.emit('error', { message: 'Lobby ist voll' });
             return;
         }
         
         const player = {
             id: socket.id,
-            name: playerName,
-            score: 0
+            name: data.playerName
         };
         
         lobby.players.push(player);
         lobby.scores[socket.id] = 0;
-        socket.join(lobbyCode);
         
-        // Bestätigung an den Spieler senden
-        socket.emit('joined-lobby-success', { lobby, lobbyCode });
+        socket.join(data.lobbyCode);
         
-        // Anderen Spielern mitteilen
-        socket.to(lobbyCode).emit('player-joined', { lobby, newPlayer: player });
-        console.log(`${playerName} ist Lobby ${lobbyCode} beigetreten`);
+        // Allen in der Lobby die aktualisierte Lobby-Info senden
+        io.to(data.lobbyCode).emit('lobby-updated', { 
+            lobby,
+            isAdmin: socket.id === lobby.admin 
+        });
+        
+        console.log(`${data.playerName} ist Lobby ${data.lobbyCode} beigetreten`);
     });
     
     // Spiel starten
-    socket.on('start-game', (lobbyCode) => {
-        const lobby = lobbies.get(lobbyCode);
-        if (lobby && lobby.admin === socket.id && lobby.players.length >= 1) {
-            lobby.gameState = 'playing';
-            io.to(lobbyCode).emit('game-started', lobby);
-            console.log(`Spiel in Lobby ${lobbyCode} gestartet`);
+    socket.on('start-game', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        
+        if (!lobby || socket.id !== lobby.admin) {
+            socket.emit('error', { message: 'Nur der Admin kann das Spiel starten' });
+            return;
         }
+        
+        if (lobby.players.length === 0) {
+            socket.emit('error', { message: 'Mindestens ein Spieler muss in der Lobby sein' });
+            return;
+        }
+        
+        lobby.gameState = 'playing';
+        
+        io.to(data.lobbyCode).emit('game-started', { lobby });
+        
+        console.log(`Spiel in Lobby ${data.lobbyCode} gestartet`);
     });
     
     // Frage auswählen
     socket.on('select-question', (data) => {
-        const { lobbyCode, category, points } = data;
-        const lobby = lobbies.get(lobbyCode);
+        const lobby = lobbies.get(data.lobbyCode);
         
-        if (lobby && lobby.admin === socket.id) {
-            const questionKey = `${category}-${points}`;
-            if (!lobby.answeredQuestions.includes(questionKey)) {
-                lobby.answeredQuestions.push(questionKey);
-                
-                const question = getQuestion(category, points, lobby.currentRound);
-                io.to(lobbyCode).emit('question-selected', { 
-                    question, 
-                    category, 
-                    points,
-                    currentPlayer: lobby.players[lobby.currentPlayer] 
-                });
-            }
-        }
-    });
-    
-    // Antwort bewerten
-    socket.on('answer-result', (data) => {
-        const { lobbyCode, correct, points, playerId } = data;
-        const lobby = lobbies.get(lobbyCode);
-        
-        if (lobby && lobby.admin === socket.id) {
-            if (correct) {
-                lobby.scores[playerId] += points;
-            } else {
-                lobby.scores[playerId] -= Math.floor(points / 2);
-            }
-            
-            // Nächster Spieler
-            lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
-            
-            // Prüfen ob Runde beendet
-            const totalQuestions = lobby.categories.length * 5;
-            if (lobby.answeredQuestions.length >= totalQuestions && lobby.currentRound === 1) {
-                lobby.currentRound = 2;
-                lobby.answeredQuestions = [];
-                lobby.currentPlayer = 0;
-                io.to(lobbyCode).emit('round-end', { lobby, nextRound: 2 });
-            } else if (lobby.answeredQuestions.length >= totalQuestions && lobby.currentRound === 2) {
-                lobby.gameState = 'finished';
-                io.to(lobbyCode).emit('game-end', { lobby, finalScores: lobby.scores });
-            }
-            
-            io.to(lobbyCode).emit('answer-processed', { 
-                lobby, 
-                scores: lobby.scores,
-                currentPlayer: lobby.players[lobby.currentPlayer]
-            });
-        }
-    });
-    
-    // Video Call Events mit Tracking
-    socket.on('player-joined-call', (data) => {
-        const { lobbyCode, playerName, playerId } = data;
-        const lobby = lobbies.get(lobbyCode);
-        
-        if (lobby) {
-            const participantId = playerId || socket.id;
-            
-            // Participant hinzufügen wenn noch nicht vorhanden
-            if (!lobby.videoCallParticipants.some(p => p.id === participantId)) {
-                lobby.videoCallParticipants.push({
-                    id: participantId,
-                    name: playerName,
-                    socketId: socket.id
-                });
-            }
-            
-            console.log(`${playerName} ist dem Video Call in Lobby ${lobbyCode} beigetreten (${lobby.videoCallParticipants.length} Teilnehmer)`);
-            
-            // Status an alle senden
-            io.to(lobbyCode).emit('video-call-status-update', {
-                participantCount: lobby.videoCallParticipants.length,
-                participants: lobby.videoCallParticipants
-            });
-            
-            // Beitritt an andere melden mit vollständiger Participant-Liste
-            socket.to(lobbyCode).emit('player-joined-call-notification', { 
-                playerName, 
-                playerId: participantId,
-                allParticipants: lobby.videoCallParticipants
-            });
-            
-            // Video-Slots für alle aktualisieren
-            io.to(lobbyCode).emit('refresh-video-slots', {
-                participants: lobby.videoCallParticipants,
-                triggerBy: playerName
-            });
-        }
-    });
-    
-    // Event für Participant-Anfrage
-    socket.on('request-video-participants', (data) => {
-        const { lobbyCode } = data;
-        const lobby = lobbies.get(lobbyCode);
-        
-        if (lobby) {
-            socket.emit('video-participants-response', {
-                participants: lobby.videoCallParticipants,
-                participantCount: lobby.videoCallParticipants.length
-            });
-        }
-    });
-    
-    // Force Connect All - für Debugging/Reparatur
-    socket.on('force-connect-all-participants', (data) => {
-        const { lobbyCode, mySocketId } = data;
-        const lobby = lobbies.get(lobbyCode);
-        
-        if (lobby) {
-            console.log(`🔧 Force Connect All für ${mySocketId} in Lobby ${lobbyCode}`);
-            console.log(`📊 Verfügbare Participants:`, lobby.videoCallParticipants.map(p => `${p.name} (${p.id})`));
-            
-            // Sende komplette Participant-Liste zurück
-            socket.emit('force-connect-response', {
-                allParticipants: lobby.videoCallParticipants,
-                yourSocketId: mySocketId
-            });
-            
-            // Benachrichtige alle anderen, dass jemand force connect macht  
-            socket.to(lobbyCode).emit('someone-force-connecting', {
-                requesterName: lobby.videoCallParticipants.find(p => p.socketId === socket.id)?.name || 'Unbekannt',
-                requesterId: mySocketId
-            });
-        }
-    });
-    
-    socket.on('player-left-call', (data) => {
-        const { lobbyCode, playerName, playerId } = data;
-        const lobby = lobbies.get(lobbyCode);
-        
-        if (lobby) {
-            const participantId = playerId || socket.id;
-            
-            // Participant entfernen
-            lobby.videoCallParticipants = lobby.videoCallParticipants.filter(p => p.id !== participantId);
-            
-            console.log(`${playerName} hat den Video Call in Lobby ${lobbyCode} verlassen (${lobby.videoCallParticipants.length} Teilnehmer)`);
-            
-            // Status an alle senden
-            io.to(lobbyCode).emit('video-call-status-update', {
-                participantCount: lobby.videoCallParticipants.length,
-                participants: lobby.videoCallParticipants
-            });
-            
-            // Austritt an andere melden
-            socket.to(lobbyCode).emit('player-left-call-notification', { 
-                playerName, 
-                playerId: participantId 
-            });
-        }
-    });
-    
-    // WebRTC Signaling - Korrigierte Parameter-Behandlung
-    socket.on('webrtc-offer', (data) => {
-        const { to, offer, lobbyCode } = data;
-        
-        // Validierung
-        if (!to || !offer) {
-            console.error('Invalid offer data:', data);
+        if (!lobby || socket.id !== lobby.admin) {
             return;
         }
         
-        socket.to(to).emit('webrtc-offer', {
-            from: socket.id,
-            offer: offer,
-            lobbyCode: lobbyCode
+        const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
+        
+        if (lobby.answeredQuestions.includes(questionKey)) {
+            return;
+        }
+        
+        const question = getQuestion(data.category, data.points, lobby.currentRound);
+        
+        io.to(data.lobbyCode).emit('question-selected', {
+            category: data.category,
+            points: data.points,
+            question: question,
+            currentPlayer: lobby.players[lobby.currentPlayer]
         });
         
-        console.log(`📤 WebRTC Offer: ${socket.id} → ${to}`);
+        console.log(`Frage ausgewählt: ${data.category} - ${data.points}`);
+    });
+    
+    // Antwort verarbeiten
+    socket.on('process-answer', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        
+        if (!lobby || socket.id !== lobby.admin) {
+            return;
+        }
+        
+        const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
+        lobby.answeredQuestions.push(questionKey);
+        
+        if (data.correct && lobby.players[lobby.currentPlayer]) {
+            const playerId = lobby.players[lobby.currentPlayer].id;
+            lobby.scores[playerId] += data.points;
+        }
+        
+        // Nächster Spieler
+        lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
+        
+        // Prüfen ob Runde zu Ende
+        const totalQuestions = lobby.categories.length * 5;
+        const questionsPerRound = totalQuestions / 2;
+        const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
+            const basePoints = lobby.currentRound === 1 ? 
+                [100, 200, 300, 400, 500] : 
+                [200, 400, 600, 800, 1000];
+            return basePoints.some(points => q.includes(`-${lobby.currentRound === 1 ? points : points / 2}`));
+        }).length;
+        
+        if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 1) {
+            // Runde 2 starten
+            lobby.currentRound = 2;
+            lobby.currentPlayer = 0;
+            
+            io.to(data.lobbyCode).emit('round-end', {
+                lobby,
+                nextRound: 2
+            });
+        } else if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 2) {
+            // Spiel beenden
+            lobby.gameState = 'finished';
+            const winner = getWinner(lobby);
+            
+            io.to(data.lobbyCode).emit('game-end', {
+                lobby,
+                winner
+            });
+        } else {
+            // Normale Antwort-Verarbeitung
+            io.to(data.lobbyCode).emit('answer-processed', {
+                lobby
+            });
+        }
+    });
+    
+    // Video Call Events
+    socket.on('force-connect', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        if (lobby) {
+            if (!lobby.videoCallParticipants) {
+                lobby.videoCallParticipants = [];
+            }
+            
+            if (!lobby.videoCallParticipants.includes(socket.id)) {
+                lobby.videoCallParticipants.push(socket.id);
+            }
+            
+            socket.to(data.lobbyCode).emit('force-connect', {
+                from: socket.id,
+                isAdmin: socket.id === lobby.admin,
+                playerName: socket.id === lobby.admin ? lobby.adminName : 
+                    lobby.players.find(p => p.id === socket.id)?.name || 'Unbekannt'
+            });
+        }
+    });
+    
+    socket.on('webrtc-offer', (data) => {
+        socket.to(data.to).emit('webrtc-offer', {
+            from: socket.id,
+            offer: data.offer
+        });
     });
     
     socket.on('webrtc-answer', (data) => {
-        const { to, answer, lobbyCode } = data;
-        
-        // Validierung
-        if (!to || !answer) {
-            console.error('Invalid answer data:', data);
-            return;
-        }
-        
-        socket.to(to).emit('webrtc-answer', {
+        socket.to(data.to).emit('webrtc-answer', {
             from: socket.id,
-            answer: answer,
-            lobbyCode: lobbyCode
+            answer: data.answer
         });
-        
-        console.log(`📤 WebRTC Answer: ${socket.id} → ${to}`);
     });
     
-    socket.on('ice-candidate', (data) => {
-        const { to, candidate, lobbyCode } = data;
-        
-        // Validierung
-        if (!to || !candidate) {
-            console.error('Invalid ICE candidate data:', data);
-            return;
-        }
-        
-        socket.to(to).emit('ice-candidate', {
+    socket.on('webrtc-ice-candidate', (data) => {
+        socket.to(data.to).emit('webrtc-ice-candidate', {
             from: socket.id,
-            candidate: candidate,
-            lobbyCode: lobbyCode
+            candidate: data.candidate
         });
-        
-        console.log(`🧊 ICE Candidate: ${socket.id} → ${to}`);
     });
     
     // Verbindung getrennt
     socket.on('disconnect', () => {
         console.log('Benutzer getrennt:', socket.id);
         
-        // Spieler aus Lobbies entfernen
-        lobbies.forEach((lobby, lobbyCode) => {
+        // Spieler aus allen Lobbies entfernen
+        for (let [lobbyCode, lobby] of lobbies) {
             if (lobby.admin === socket.id) {
-                // Admin hat verlassen - Lobby schließen
-                io.to(lobbyCode).emit('lobby-closed', 'Admin hat die Lobby verlassen');
+                // Admin verlässt - Lobby schließen
+                io.to(lobbyCode).emit('lobby-closed');
                 lobbies.delete(lobbyCode);
+                console.log(`Lobby ${lobbyCode} geschlossen (Admin verlassen)`);
             } else {
                 // Spieler entfernen
                 const playerIndex = lobby.players.findIndex(p => p.id === socket.id);
                 if (playerIndex !== -1) {
-                    const removedPlayer = lobby.players.splice(playerIndex, 1)[0];
+                    lobby.players.splice(playerIndex, 1);
                     delete lobby.scores[socket.id];
                     
-                    // Aktuellen Spieler anpassen
+                    // Video Call Teilnehmer entfernen
+                    if (lobby.videoCallParticipants) {
+                        const videoIndex = lobby.videoCallParticipants.indexOf(socket.id);
+                        if (videoIndex !== -1) {
+                            lobby.videoCallParticipants.splice(videoIndex, 1);
+                        }
+                    }
+                    
+                    // Aktuellen Spieler-Index anpassen wenn nötig
                     if (lobby.currentPlayer >= lobby.players.length && lobby.players.length > 0) {
                         lobby.currentPlayer = 0;
                     }
                     
-                    io.to(lobbyCode).emit('player-left', { 
-                        lobby, 
-                        removedPlayer: removedPlayer.name 
-                    });
-                }
-                
-                // Aus Video Call entfernen
-                const videoParticipantIndex = lobby.videoCallParticipants.findIndex(p => p.socketId === socket.id);
-                if (videoParticipantIndex !== -1) {
-                    const removedParticipant = lobby.videoCallParticipants.splice(videoParticipantIndex, 1)[0];
-                    console.log(`${removedParticipant.name} hat den Video Call verlassen`);
-                    
-                    // Video-Slots für alle aktualisieren
-                    io.to(lobbyCode).emit('refresh-video-slots', {
-                        participants: lobby.videoCallParticipants,
-                        triggerBy: `${removedParticipant.name} (left)`
-                    });
-                    
-                    // Status aktualisieren
-                    io.to(lobbyCode).emit('video-call-status-update', {
-                        participantCount: lobby.videoCallParticipants.length,
-                        participants: lobby.videoCallParticipants
-                    });
+                    io.to(lobbyCode).emit('lobby-updated', { lobby });
+                    console.log(`Spieler aus Lobby ${lobbyCode} entfernt`);
                 }
             }
-        });
+        }
     });
 });
 
@@ -384,77 +301,77 @@ function getQuestion(category, points, round) {
     // Marvel Rivals spezifische Fragen - Runde 1: Basis-Fragen, Runde 2: Experten-Fragen
     const questionsRound1 = {
         'Marvel Rivals Helden': {
-            100: 'Welcher Held kann Netze schießen und an Wänden laufen?',
-            200: 'Welcher Charakter trägt einen Schild und kann ihn werfen?',
-            300: 'Welcher Held kann sich in Eis verwandeln und Eiswände bauen?',
-            400: 'Welcher Magier kann Portale öffnen und die Realität verbiegen?',
-            500: 'Welcher Charakter kann zwischen Normal- und Hulk-Form wechseln?'
+            100: 'Wie heißt Spider-Man mit richtigem Namen?',
+            200: 'Wie heißt der Hammer von Thor?',
+            300: 'Wie heißt Captain Americas Schildmaterial?',
+            400: 'Welches Doppelleben führt Luna Snow?',
+            500: 'Was für ein Gott ist Loki?'
         },
         'Fähigkeiten & Ultimates': {
-            100: 'Was passiert wenn Spider-Man sein Ultimate aktiviert?',
-            200: 'Welche Fähigkeit hat Iron Mans Repulsor-Strahl?',
-            300: 'Was bewirkt Storms Ultimate "Lightning Storm"?',
-            400: 'Welche Heilfähigkeit hat Rocket Raccoon?',
-            500: 'Was ist das mächtigste Ultimate von Doctor Strange?'
+            100: 'Luna Snow: "I am ready to ...!"',
+            200: 'Thor: "Behold, the God of ...!"',
+            300: 'Moon Knight: "The ... haunts ...!"',
+            400: 'Squirrel Girl: "My friends ...!"',
+            500: 'Magik: "Behold: ...!"'
         },
         'Maps & Modi': {
-            100: 'Wie heißt der Hauptspielmodus in Marvel Rivals?',
-            200: 'Auf welcher bekannten Marvel-Location basiert eine der Maps?',
-            300: 'Wie viele Capture Points gibt es normalerweise pro Map?',
-            400: 'Welche Map spielt in New York City?',
-            500: 'Auf welcher kosmischen Location kämpft man in Marvel Rivals?'
+            100: 'Wie viele Spieler hat ein Team?',
+            200: 'Ab wie vielen Spielern wird der Payload am schnellsten bewegt?',
+            300: 'Kann man in den Gegnerischen Spawn/Safezone rein?',
+            400: 'Wie hoch ist der Timer bei der Charakterauswahl?',
+            500: 'Wie lange dauert es zum respawnen nach einem Tod?'
         },
         'Teams & Strategien': {
-            100: 'Aus wie vielen Spielern besteht ein Team?',
-            200: 'Welche Rolle ist am besten zum Heilen geeignet?',
-            300: 'Welcher Held eignet sich am besten als Tank?',
-            400: 'Was ist eine effektive Counter-Strategie gegen fliegende Helden?',
-            500: 'Welche Team-Combo aus Tank, DPS und Support ist am stärksten?'
+            100: 'Wer von den 3 ist am wichtigsten für das Team-Up? Loki, Mantis oder Groot',
+            200: 'Mit wem hat Cloak & Dagger ein Team-Up?',
+            300: 'Welches Team-Up wurde in Season 3 permanent gebannt?',
+            400: 'Welches Team-Up war in Season 1 das beste, um Gegner zu flanken und zu 1-Shotten?',
+            500: '4 Charaktere bilden ein gemeinsames Team-Up. Welche 4 sind es?'
         },
-        'Game Mechanics': {
-            100: 'Wie regeneriert man Gesundheit in Marvel Rivals?',
-            200: 'Was passiert wenn man aus der Map fällt?',
-            300: 'Wie lädt sich die Ultimate-Fähigkeit auf?',
-            400: 'Was ist der Unterschied zwischen Schild und Rüstung?',
-            500: 'Wie funktioniert das Respawn-System in Marvel Rivals?'
+        'Wo ist das?': {
+            100: { question: 'Wo ist das?', image: 'Runde1_100.png' },
+            200: { question: 'Wo ist das?', image: 'Runde1_200.png' },
+            300: { question: 'Wo ist das?', image: 'Runde1_300.png' },
+            400: { question: 'Wo ist das?', image: 'Runde1_400.png' },
+            500: { question: 'Wo ist das?', image: 'Runde1_500.png' }
         }
     };
 
     const questionsRound2 = {
         'Marvel Rivals Helden': {
-            100: 'Welcher Charakter hat die Fähigkeit "Web-Slinging Mastery"?',
-            200: 'Wer ist der stärkste Tank-Charakter im Marvel Rivals Roster?',
-            300: 'Welcher Held kann sowohl fliegen als auch Elementar-Schäden verursachen?',
-            400: 'Welcher Support-Charakter kann Teammitglieder wiederbeleben?',
-            500: 'Welcher Charakter hat die komplexeste Ultimate-Mechanik im Spiel?'
+            100: 'Wie heißt Iron Man mit richtigem Namen?',
+            200: 'Wer verwandelt sich wenn er sauer wird?',
+            300: 'Wie heißt Tony Starks AI System?',
+            400: 'Wie heißt die jüngere Tochter von Thanos?',
+            500: 'Wie heißt das Raumschiff von den Guardians of the Galaxy?'
         },
         'Fähigkeiten & Ultimates': {
-            100: 'Welche Fähigkeit ermöglicht es Magneto Metall zu kontrollieren?',
-            200: 'Was ist der Cooldown von Wolverines Heilungsfähigkeit?',
-            300: 'Welches Ultimate kann die komplette Map-Kontrolle übernehmen?',
-            400: 'Welche Combo aus Fähigkeiten ist am effektivsten für Team-Wipes?',
-            500: 'Welcher Charakter kann Ultimate-Fähigkeiten anderer Helden kopieren?'
+            100: 'Loki: "Your ... are mine!"',
+            200: 'Black Widow: "Plasma ...!"',
+            300: 'Phoenix: "You are ...!"',
+            400: 'Mantis: "We are ...!"',
+            500: 'Blade: "A thousand ...!"'
         },
         'Maps & Modi': {
-            100: 'Welcher Spielmodus hat die längste durchschnittliche Match-Dauer?',
-            200: 'Auf welcher Map gibt es versteckte Easter-Eggs zu Marvel Comics?',
-            300: 'Welche Map-Rotation wird in kompetitiven Turnieren verwendet?',
-            400: 'Welche Environmental-Hazards gibt es auf Asgard?',
-            500: 'Welche Map hat die komplexesten Vertikale-Gameplay-Elemente?'
+            100: 'Welche Map wird am häufigsten in Ranked gespielt?',
+            200: 'Wie viele Kontrollpunkte hat eine Escort Map?',
+            300: 'Was ist der beste Modus um XP zu farmen?',
+            400: 'Welche Map hat die meisten Flanking-Routen?',
+            500: 'Auf welcher Map ist die Ultimate-Laderate am schnellsten?'
         },
         'Teams & Strategien': {
-            100: 'Welche Meta-Strategie dominiert das aktuelle Competitive-Gameplay?',
-            200: 'Welche Synergien gibt es zwischen X-Men Charakteren?',
-            300: 'Was ist die optimale Team-Rotation für Capture-Point-Maps?',
-            400: 'Welche Advanced-Positioning-Taktiken nutzen Pro-Teams?',
-            500: 'Welche Ultimate-Combos können komplette Team-Fights entscheiden?'
+            100: 'Mit wem hat Thor in Season 4 ein neues Team-Up bekommen?',
+            200: 'Was bringt das neue Team-Up für Black Panther mit Hulk & Namor?',
+            300: 'Was bringt das neue Team-Up für Star-Lord mit Rocket Raccoon & Peni Parker?',
+            400: 'Bei welchem Team-Up war es nicht schlimm, wenn man 1x gestorben ist?',
+            500: 'Welches alte Team-Up war von anfang an OP, wurde aber direkt danach generft?'
         },
-        'Game Mechanics': {
-            100: 'Wie funktioniert das Advanced-Movement-System in Marvel Rivals?',
-            200: 'Was ist der Unterschied zwischen Hard- und Soft-Counters?',
-            300: 'Wie berechnet sich der Damage-Falloff bei Projektil-Waffen?',
-            400: 'Welche Frame-Data ist für kompetitives Spiel am wichtigsten?',
-            500: 'Wie funktioniert das komplexe Hitbox- und Collision-System?'
+        'Wo ist das?': {
+            100: { question: 'Wo ist das?', image: 'Runde2_100.png' },
+            200: { question: 'Wo ist das?', image: 'Runde2_200.png' },
+            300: { question: 'Wo ist das?', image: 'Runde2_300.png' },
+            400: { question: 'Wo ist das?', image: 'Runde2_400.png' },
+            500: { question: 'Wo ist das?', image: 'Runde2_500.png' }
         }
     };
     
@@ -463,6 +380,21 @@ function getQuestion(category, points, round) {
     
     return questions[category] && questions[category][basePoints] ? 
            questions[category][basePoints] : `Experten-Frage für ${category} - Runde ${round}`;
+}
+
+function getWinner(lobby) {
+    let maxScore = -1;
+    let winner = null;
+    
+    for (let playerId in lobby.scores) {
+        if (lobby.scores[playerId] > maxScore) {
+            maxScore = lobby.scores[playerId];
+            const player = lobby.players.find(p => p.id === playerId);
+            winner = player ? player.name : 'Unbekannt';
+        }
+    }
+    
+    return winner;
 }
 
 const PORT = process.env.PORT || 3000;

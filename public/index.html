@@ -54,8 +54,8 @@
                 <h2>Lobby beitreten</h2>
                 <form id="join-lobby-form">
                     <div class="input-group">
-                        <label for="player-name">Dein Name</label>
-                        <input type="text" id="player-name" placeholder="Gib deinen Namen ein..." required>
+                        <label for="join-player-name">Dein Name</label>
+                        <input type="text" id="join-player-name" placeholder="Gib deinen Namen ein..." required autocomplete="off">
                     </div>
                     <div class="input-group">
                         <label for="lobby-code">Lobby-Code</label>
@@ -124,16 +124,6 @@
             </div>
             
             <div class="game-container">
-                <!-- Header mit Rundeninfo -->
-                <div class="game-header">
-                    <div class="round-info">
-                        <h2>Runde <span id="current-round">1</span></h2>
-                        <div class="current-player">
-                            Am Zug: <span id="active-player-name">Spieler 1</span>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Spielbrett -->
                 <div class="game-board" id="game-board">
                     <!-- Wird dynamisch generiert -->

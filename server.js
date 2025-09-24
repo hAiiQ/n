@@ -412,11 +412,11 @@ function getQuestion(category, points, round) {
             500: 'Welches alte Team-Up war von anfang an OP, wurde aber direkt danach generft?'
         },
         'Game-Mechanics': {
-            100: 'Welche Map wird am häufigsten in Ranked gespielt?',
-            200: 'Wie viele Kontrollpunkte hat eine Escort Map?',
-            300: 'Was ist der beste Modus um XP zu farmen?',
-            400: 'Welche Map hat die meisten Flanking-Routen?',
-            500: 'Auf welcher Map ist die Ultimate-Laderate am schnellsten?'
+            100: 'Was ist ein ausgeglichendes Team?',
+            200: 'Auf wie viel % wird die Ultimate zurückgesetzt, wenn man 100% hat und den Charakter wechselt?',
+            300: 'Nenne mir 5 Dive Charaktere',
+            400: 'Womit kann man einen Punkt mit dem gesamten Team in letzter Sekunde gewinnen?',
+            500: 'Wie hoch ist der Cooldown von Doctor Strange's Portal?'
         },
         'Voice-Lines': {
             100: '"Your ... are mine!"',

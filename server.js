@@ -416,7 +416,7 @@ function getQuestion(category, points, round) {
             200: 'Auf wie viel % wird die Ultimate zurückgesetzt, wenn man 100% hat und den Charakter wechselt?',
             300: 'Nenne mir 5 Dive Charaktere',
             400: 'Womit kann man einen Punkt mit dem gesamten Team in letzter Sekunde gewinnen?',
-            500: 'Wie hoch ist der Cooldown von Doctor Strange's Portal?'
+            500: 'Wie hoch ist der Cooldown von Doctor Stranges Portal?'
         },
         'Voice-Lines': {
             100: '"Your ... are mine!"',

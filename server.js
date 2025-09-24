@@ -228,10 +228,41 @@ io.on('connection', (socket) => {
         // Nächster Spieler
         lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
         
-        // Einfache Antwort-Verarbeitung - Spiel läuft endlos weiter
-        io.to(data.lobbyCode).emit('answer-processed', {
-            lobby
-        });
+        // Prüfen ob alle Fragen der aktuellen Runde beantwortet wurden
+        const totalQuestions = lobby.categories.length * 5; // 5 Kategorien * 5 Fragen = 25 Fragen pro Runde
+        const questionsPerRound = totalQuestions;
+        
+        // Zählen der beantworteten Fragen in der aktuellen Runde
+        const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
+            const expectedPoints = lobby.currentRound === 1 ? 
+                [100, 200, 300, 400, 500] : 
+                [200, 400, 600, 800, 1000];
+            
+            return expectedPoints.some(points => {
+                const keyPoints = lobby.currentRound === 1 ? points : points / 2;
+                return q.includes(`-${keyPoints}`);
+            });
+        }).length;
+        
+        console.log(`Round ${lobby.currentRound}: ${currentRoundQuestions}/${questionsPerRound} questions answered`);
+        
+        if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 1) {
+            // Alle Fragen von Runde 1 beantwortet - Runde 2 starten
+            lobby.currentRound = 2;
+            lobby.currentPlayer = 0;
+            
+            console.log('Starting Round 2!');
+            
+            io.to(data.lobbyCode).emit('round-end', {
+                lobby,
+                nextRound: 2
+            });
+        } else {
+            // Normale Antwort-Verarbeitung
+            io.to(data.lobbyCode).emit('answer-processed', {
+                lobby
+            });
+        }
         
         console.log(`Next player: ${lobby.players[lobby.currentPlayer] ? lobby.players[lobby.currentPlayer].name : 'Unknown'}`);
     });
@@ -335,7 +366,7 @@ function getQuestion(category, points, round) {
         'Team-Ups': {
             100: 'Wer von den 3 ist am wichtigsten für das Team-Up? Loki, Mantis oder Groot',
             200: 'Mit wem hat Cloak & Dagger ein Team-Up?',
-            300: 'Welches Team-Up wurde in Season 3 permanent gebannt?',
+            300: 'Welches Team-Up wurde in Season 2,5 permanent gebannt?',
             400: 'Welches Team-Up war in Season 1 das beste, um Gegner zu flanken und zu 1-Shotten?',
             500: '4 Charaktere bilden ein gemeinsames Team-Up. Welche 4 sind es?'
         },
@@ -347,11 +378,11 @@ function getQuestion(category, points, round) {
             500: 'Wie lange dauert es zum respawnen nach einem Tod?'
         },
         'Voice-Lines': {
-            100: 'Luna Snow: "I am ready to ...!"',
-            200: 'Thor: "Behold, the God of ...!"',
-            300: 'Moon Knight: "The ... haunts ...!"',
-            400: 'Squirrel Girl: "My friends ...!"',
-            500: 'Magik: "Behold: ...!"'
+            100: '"I am ready to ...!"',
+            200: '"Behold, the God of ...!"',
+            300: '"The ... haunts ...!"',
+            400: '"My friends ...!"',
+            500: '"Behold: ...!"'
         },
         'Wo ist das?': {
             100: { question: 'Wo ist das?', image: 'Runde1_100.png' },

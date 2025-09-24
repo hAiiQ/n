@@ -300,33 +300,33 @@ function generateLobbyCode() {
 function getQuestion(category, points, round) {
     // Marvel Rivals spezifische Fragen - Runde 1: Basis-Fragen, Runde 2: Experten-Fragen
     const questionsRound1 = {
-        'Marvel Rivals Helden': {
+        'Rund um Marvel': {
             100: 'Wie heißt Spider-Man mit richtigem Namen?',
             200: 'Wie heißt der Hammer von Thor?',
             300: 'Wie heißt Captain Americas Schildmaterial?',
             400: 'Welches Doppelleben führt Luna Snow?',
             500: 'Was für ein Gott ist Loki?'
         },
-        'Fähigkeiten & Ultimates': {
-            100: 'Luna Snow: "I am ready to ...!"',
-            200: 'Thor: "Behold, the God of ...!"',
-            300: 'Moon Knight: "The ... haunts ...!"',
-            400: 'Squirrel Girl: "My friends ...!"',
-            500: 'Magik: "Behold: ...!"'
+        'Team-Ups': {
+            100: 'Wer von den 3 ist am wichtigsten für das Team-Up? Loki, Mantis oder Groot',
+            200: 'Mit wem hat Cloak & Dagger ein Team-Up?',
+            300: 'Welches Team-Up wurde in Season 3 permanent gebannt?',
+            400: 'Welches Team-Up war in Season 1 das beste, um Gegner zu flanken und zu 1-Shotten?',
+            500: '4 Charaktere bilden ein gemeinsames Team-Up. Welche 4 sind es?'
         },
-        'Maps & Modi': {
+        'Game-Mechanics': {
             100: 'Wie viele Spieler hat ein Team?',
             200: 'Ab wie vielen Spielern wird der Payload am schnellsten bewegt?',
             300: 'Kann man in den Gegnerischen Spawn/Safezone rein?',
             400: 'Wie hoch ist der Timer bei der Charakterauswahl?',
             500: 'Wie lange dauert es zum respawnen nach einem Tod?'
         },
-        'Teams & Strategien': {
-            100: 'Wer von den 3 ist am wichtigsten für das Team-Up? Loki, Mantis oder Groot',
-            200: 'Mit wem hat Cloak & Dagger ein Team-Up?',
-            300: 'Welches Team-Up wurde in Season 3 permanent gebannt?',
-            400: 'Welches Team-Up war in Season 1 das beste, um Gegner zu flanken und zu 1-Shotten?',
-            500: '4 Charaktere bilden ein gemeinsames Team-Up. Welche 4 sind es?'
+        'Voice-Lines': {
+            100: 'Luna Snow: "I am ready to ...!"',
+            200: 'Thor: "Behold, the God of ...!"',
+            300: 'Moon Knight: "The ... haunts ...!"',
+            400: 'Squirrel Girl: "My friends ...!"',
+            500: 'Magik: "Behold: ...!"'
         },
         'Wo ist das?': {
             100: { question: 'Wo ist das?', image: 'Runde1_100.png' },
@@ -338,33 +338,33 @@ function getQuestion(category, points, round) {
     };
 
     const questionsRound2 = {
-        'Marvel Rivals Helden': {
+        'Rund um Marvel': {
             100: 'Wie heißt Iron Man mit richtigem Namen?',
             200: 'Wer verwandelt sich wenn er sauer wird?',
             300: 'Wie heißt Tony Starks AI System?',
             400: 'Wie heißt die jüngere Tochter von Thanos?',
             500: 'Wie heißt das Raumschiff von den Guardians of the Galaxy?'
         },
-        'Fähigkeiten & Ultimates': {
-            100: 'Loki: "Your ... are mine!"',
-            200: 'Black Widow: "Plasma ...!"',
-            300: 'Phoenix: "You are ...!"',
-            400: 'Mantis: "We are ...!"',
-            500: 'Blade: "A thousand ...!"'
+        'Team-Ups': {
+            100: 'Mit wem hat Thor in Season 4 ein neues Team-Up bekommen?',
+            200: 'Was bringt das neue Team-Up für Black Panther mit Hulk & Namor?',
+            300: 'Was bringt das neue Team-Up für Star-Lord mit Rocket Raccoon & Peni Parker?',
+            400: 'Bei welchem Team-Up war es nicht schlimm, wenn man 1x gestorben ist?',
+            500: 'Welches alte Team-Up war von anfang an OP, wurde aber direkt danach generft?'
         },
-        'Maps & Modi': {
+        'Game-Mechanics': {
             100: 'Welche Map wird am häufigsten in Ranked gespielt?',
             200: 'Wie viele Kontrollpunkte hat eine Escort Map?',
             300: 'Was ist der beste Modus um XP zu farmen?',
             400: 'Welche Map hat die meisten Flanking-Routen?',
             500: 'Auf welcher Map ist die Ultimate-Laderate am schnellsten?'
         },
-        'Teams & Strategien': {
-            100: 'Mit wem hat Thor in Season 4 ein neues Team-Up bekommen?',
-            200: 'Was bringt das neue Team-Up für Black Panther mit Hulk & Namor?',
-            300: 'Was bringt das neue Team-Up für Star-Lord mit Rocket Raccoon & Peni Parker?',
-            400: 'Bei welchem Team-Up war es nicht schlimm, wenn man 1x gestorben ist?',
-            500: 'Welches alte Team-Up war von anfang an OP, wurde aber direkt danach generft?'
+        'Voice-Lines': {
+            100: 'Loki: "Your ... are mine!"',
+            200: 'Black Widow: "Plasma ...!"',
+            300: 'Phoenix: "You are ...!"',
+            400: 'Mantis: "We are ...!"',
+            500: 'Blade: "A thousand ...!"'
         },
         'Wo ist das?': {
             100: { question: 'Wo ist das?', image: 'Runde2_100.png' },

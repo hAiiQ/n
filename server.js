@@ -86,6 +86,7 @@ io.on('connection', (socket) => {
         }
         
         if (lobby.players.length >= 4) {
+            console.log('Lobby ist voll - Aktuelle Spieler:', lobby.players.length, lobby.players);
             socket.emit('error', { message: 'Lobby ist voll' });
             return;
         }
@@ -100,10 +101,17 @@ io.on('connection', (socket) => {
         
         socket.join(data.lobbyCode);
         
-        // Allen in der Lobby die aktualisierte Lobby-Info senden
-        io.to(data.lobbyCode).emit('lobby-updated', { 
+        // Dem beitretenden Spieler bestätigen, dass er erfolgreich beigetreten ist
+        socket.emit('joined-lobby-success', { 
+            lobbyCode: data.lobbyCode,
             lobby,
             isAdmin: socket.id === lobby.admin 
+        });
+        
+        // Allen anderen in der Lobby die aktualisierte Lobby-Info senden
+        socket.to(data.lobbyCode).emit('lobby-updated', { 
+            lobby,
+            isAdmin: false // Andere Spieler sind nie Admin
         });
         
         console.log(`${data.playerName} ist Lobby ${data.lobbyCode} beigetreten`);

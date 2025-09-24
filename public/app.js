@@ -111,7 +111,7 @@ document.getElementById('join-lobby-form').addEventListener('submit', (e) => {
 // Spiel starten (nur Admin)
 document.getElementById('start-game-btn').addEventListener('click', () => {
     if (isAdmin && currentLobbyCode) {
-        socket.emit('start-game', currentLobbyCode);
+        socket.emit('start-game', { lobbyCode: currentLobbyCode });
     }
 });
 
@@ -159,6 +159,14 @@ socket.on('joined-lobby-success', (data) => {
         setupVideoCallControls();
         initializeWebRTC();
     }, 200);
+});
+
+socket.on('lobby-updated', (data) => {
+    currentLobby = data.lobby;
+    isAdmin = data.isAdmin;
+    updateLobbyScreen();
+    updateVideoPlayerNames();
+    showNotification(`Lobby aktualisiert!`, 'info');
 });
 
 socket.on('player-joined', (data) => {

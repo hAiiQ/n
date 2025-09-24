@@ -167,7 +167,14 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Für endloses Spiel: Alle Fragen sind immer auswählbar
+        const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
+        
+        // Überprüfung ob Frage bereits beantwortet wurde (für graue Buttons)
+        if (lobby.answeredQuestions.includes(questionKey)) {
+            console.log(`Question ${questionKey} already answered, ignoring click`);
+            return;
+        }
+        
         const question = getQuestion(data.category, data.points, lobby.currentRound);
         
         io.to(data.lobbyCode).emit('question-selected', {
@@ -198,29 +205,10 @@ io.on('connection', (socket) => {
         const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
         console.log('Processing answer for endless game mode');
         
-        // Frage temporär deaktivieren (5 Sekunden)
-        const tempQuestionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
-        if (!lobby.recentlyAnswered) {
-            lobby.recentlyAnswered = [];
-        }
-        lobby.recentlyAnswered.push(tempQuestionKey);
+        // Frage permanent deaktivieren
+        lobby.answeredQuestions.push(questionKey);
         
-        console.log(`Question ${tempQuestionKey} temporarily disabled for 5 seconds`);
-        
-        // Nach 5 Sekunden wieder aktivieren
-        setTimeout(() => {
-            const index = lobby.recentlyAnswered.indexOf(tempQuestionKey);
-            if (index > -1) {
-                lobby.recentlyAnswered.splice(index, 1);
-                console.log(`Question ${tempQuestionKey} re-enabled`);
-                
-                // Allen Spielern das Update senden
-                io.to(data.lobbyCode).emit('question-reactivated', {
-                    lobby,
-                    questionKey: tempQuestionKey
-                });
-            }
-        }, 5000);
+        console.log(`Question ${questionKey} permanently disabled (turned gray)`);
         
         if (lobby.players[lobby.currentPlayer]) {
             const playerId = lobby.players[lobby.currentPlayer].id;

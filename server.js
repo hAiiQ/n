@@ -251,7 +251,10 @@ io.on('connection', (socket) => {
             lobby.currentRound = 2;
             lobby.currentPlayer = 0;
             
-            console.log('Starting Round 2!');
+            // Für Runde 2: answeredQuestions leeren, damit alle Buttons wieder verfügbar sind
+            lobby.answeredQuestions = [];
+            
+            console.log('Starting Round 2! Cleared answered questions for fresh start.');
             
             io.to(data.lobbyCode).emit('round-end', {
                 lobby,
@@ -416,11 +419,11 @@ function getQuestion(category, points, round) {
             500: 'Auf welcher Map ist die Ultimate-Laderate am schnellsten?'
         },
         'Voice-Lines': {
-            100: 'Loki: "Your ... are mine!"',
-            200: 'Black Widow: "Plasma ...!"',
-            300: 'Phoenix: "You are ...!"',
-            400: 'Mantis: "We are ...!"',
-            500: 'Blade: "A thousand ...!"'
+            100: '"Your ... are mine!"',
+            200: '"Plasma ...!"',
+            300: '"You are ...!"',
+            400: '"We are ...!"',
+            500: '"A thousand ...!"'
         },
         'Wo ist das?': {
             100: { question: 'Wo ist das?', image: 'Runde2_100.png' },

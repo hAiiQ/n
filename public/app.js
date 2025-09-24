@@ -265,6 +265,12 @@ socket.on('answer-processed', (data) => {
     showNotification('Antwort verarbeitet!', 'info');
 });
 
+socket.on('question-reactivated', (data) => {
+    currentLobby = data.lobby;
+    generateGameBoard(); // Spielbrett mit reaktivierten Fragen aktualisieren
+    console.log(`Question ${data.questionKey} reactivated`);
+});
+
 socket.on('round-end', (data) => {
     currentLobby = data.lobby;
     updateGameScreen();
@@ -1795,9 +1801,15 @@ function generateGameBoard() {
             cell.className = 'question-cell';
             cell.textContent = points;
             
-            // Für endloses Spiel: Fragen werden nie permanent deaktiviert
-            // Sie werden nur kurz nach der Beantwortung grau, dann wieder aktiviert
-            if (isAdmin) {
+            // Überprüfen ob diese Frage kürzlich beantwortet wurde (temporär deaktiviert)
+            const isRecentlyAnswered = currentLobby.recentlyAnswered && 
+                                      currentLobby.recentlyAnswered.includes(questionKey);
+            
+            if (isRecentlyAnswered) {
+                cell.disabled = true;
+                cell.classList.add('disabled');
+                cell.style.opacity = '0.5';
+            } else if (isAdmin) {
                 cell.addEventListener('click', () => {
                     selectQuestion(category, points);
                 });

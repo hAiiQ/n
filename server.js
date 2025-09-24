@@ -109,30 +109,50 @@ io.on('connection', (socket) => {
         });
         
         // Allen anderen in der Lobby die aktualisierte Lobby-Info senden
-        socket.to(data.lobbyCode).emit('lobby-updated', { 
-            lobby,
-            isAdmin: false // Andere Spieler sind nie Admin
-        });
+        // Jedem Spieler individuell senden mit korrektem isAdmin Status
+        const socketsInRoom = io.sockets.adapter.rooms.get(data.lobbyCode);
+        if (socketsInRoom) {
+            for (const socketId of socketsInRoom) {
+                if (socketId !== socket.id) { // Nicht an den beitretenden Spieler
+                    io.to(socketId).emit('lobby-updated', { 
+                        lobby,
+                        isAdmin: socketId === lobby.admin 
+                    });
+                }
+            }
+        }
         
         console.log(`${data.playerName} ist Lobby ${data.lobbyCode} beigetreten`);
     });
     
     // Spiel starten
     socket.on('start-game', (data) => {
-        const lobby = lobbies.get(data.lobbyCode);
+        console.log('Start-game event received:', data);
+        console.log('Socket ID:', socket.id);
         
-        if (!lobby || socket.id !== lobby.admin) {
+        const lobby = lobbies.get(data.lobbyCode);
+        console.log('Found lobby:', lobby ? 'yes' : 'no');
+        
+        if (!lobby) {
+            console.log('Lobby not found');
+            socket.emit('error', { message: 'Lobby nicht gefunden' });
+            return;
+        }
+        
+        console.log('Lobby admin:', lobby.admin);
+        console.log('Is admin?', socket.id === lobby.admin);
+        
+        if (socket.id !== lobby.admin) {
+            console.log('Not admin - cannot start game');
             socket.emit('error', { message: 'Nur der Admin kann das Spiel starten' });
             return;
         }
         
-        if (lobby.players.length === 0) {
-            socket.emit('error', { message: 'Mindestens ein Spieler muss in der Lobby sein' });
-            return;
-        }
+        console.log('Number of players:', lobby.players.length);
         
         lobby.gameState = 'playing';
         
+        console.log('Emitting game-started event to lobby:', data.lobbyCode);
         io.to(data.lobbyCode).emit('game-started', { lobby });
         
         console.log(`Spiel in Lobby ${data.lobbyCode} gestartet`);
@@ -146,12 +166,7 @@ io.on('connection', (socket) => {
             return;
         }
         
-        const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
-        
-        if (lobby.answeredQuestions.includes(questionKey)) {
-            return;
-        }
-        
+        // Für endloses Spiel: Alle Fragen sind immer auswählbar
         const question = getQuestion(data.category, data.points, lobby.currentRound);
         
         io.to(data.lobbyCode).emit('question-selected', {
@@ -166,57 +181,46 @@ io.on('connection', (socket) => {
     
     // Antwort verarbeiten
     socket.on('process-answer', (data) => {
+        console.log('Process answer received:', data);
         const lobby = lobbies.get(data.lobbyCode);
         
-        if (!lobby || socket.id !== lobby.admin) {
+        if (!lobby) {
+            console.log('Lobby not found for process-answer');
+            return;
+        }
+        
+        if (socket.id !== lobby.admin) {
+            console.log('Not admin - cannot process answer');
             return;
         }
         
         const questionKey = `${data.category}-${lobby.currentRound === 1 ? data.points : data.points / 2}`;
-        lobby.answeredQuestions.push(questionKey);
+        console.log('Processing answer for endless game mode');
         
-        if (data.correct && lobby.players[lobby.currentPlayer]) {
+        if (lobby.players[lobby.currentPlayer]) {
             const playerId = lobby.players[lobby.currentPlayer].id;
-            lobby.scores[playerId] += data.points;
+            
+            if (data.correct) {
+                console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered correctly: +${data.points} points`);
+                lobby.scores[playerId] += data.points;
+            } else {
+                console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered incorrectly: -${Math.floor(data.points * 0.5)} points`);
+                // Bei falscher Antwort: 50% der Punkte abziehen (negative Scores erlaubt)
+                lobby.scores[playerId] -= Math.floor(data.points * 0.5);
+            }
+            
+            console.log(`New score for ${lobby.players[lobby.currentPlayer].name}: ${lobby.scores[playerId]}`);
         }
         
         // Nächster Spieler
         lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
         
-        // Prüfen ob Runde zu Ende
-        const totalQuestions = lobby.categories.length * 5;
-        const questionsPerRound = totalQuestions / 2;
-        const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
-            const basePoints = lobby.currentRound === 1 ? 
-                [100, 200, 300, 400, 500] : 
-                [200, 400, 600, 800, 1000];
-            return basePoints.some(points => q.includes(`-${lobby.currentRound === 1 ? points : points / 2}`));
-        }).length;
+        // Einfache Antwort-Verarbeitung - Spiel läuft endlos weiter
+        io.to(data.lobbyCode).emit('answer-processed', {
+            lobby
+        });
         
-        if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 1) {
-            // Runde 2 starten
-            lobby.currentRound = 2;
-            lobby.currentPlayer = 0;
-            
-            io.to(data.lobbyCode).emit('round-end', {
-                lobby,
-                nextRound: 2
-            });
-        } else if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 2) {
-            // Spiel beenden
-            lobby.gameState = 'finished';
-            const winner = getWinner(lobby);
-            
-            io.to(data.lobbyCode).emit('game-end', {
-                lobby,
-                winner
-            });
-        } else {
-            // Normale Antwort-Verarbeitung
-            io.to(data.lobbyCode).emit('answer-processed', {
-                lobby
-            });
-        }
+        console.log(`Next player: ${lobby.players[lobby.currentPlayer] ? lobby.players[lobby.currentPlayer].name : 'Unknown'}`);
     });
     
     // Video Call Events

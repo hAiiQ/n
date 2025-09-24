@@ -82,7 +82,9 @@ document.getElementById('create-lobby-form').addEventListener('submit', (e) => {
     
     if (adminName) {
         console.log('Emitting create-lobby event');
-        isAdmin = true;
+        console.log('Setting isAdmin = true before emit');
+        isAdmin = true; // Setze schon hier auf true
+        console.log('isAdmin nach Setzen:', isAdmin);
         socket.emit('create-lobby', { adminName });
     } else {
         console.log('Admin name is empty');
@@ -109,10 +111,34 @@ document.getElementById('join-lobby-form').addEventListener('submit', (e) => {
 });
 
 // Spiel starten (nur Admin)
-document.getElementById('start-game-btn').addEventListener('click', () => {
-    if (isAdmin && currentLobbyCode) {
-        socket.emit('start-game', { lobbyCode: currentLobbyCode });
+document.getElementById('start-game-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    console.log('=== START GAME BUTTON CLICKED ===');
+    console.log('isAdmin:', isAdmin);
+    console.log('currentLobbyCode:', currentLobbyCode);
+    console.log('currentLobby:', currentLobby);
+    console.log('socket.connected:', socket.connected);
+    
+    if (!isAdmin) {
+        console.log('❌ Not admin - cannot start game');
+        showNotification('Nur der Admin kann das Spiel starten', 'error');
+        return;
     }
+    
+    if (!currentLobbyCode) {
+        console.log('❌ No lobby code - cannot start game');
+        showNotification('Kein Lobby-Code vorhanden', 'error');
+        return;
+    }
+    
+    if (!socket.connected) {
+        console.log('❌ Socket not connected - cannot start game');
+        showNotification('Keine Verbindung zum Server', 'error');
+        return;
+    }
+    
+    console.log('✅ All checks passed - emitting start-game event');
+    socket.emit('start-game', { lobbyCode: currentLobbyCode });
 });
 
 // Lobby verlassen
@@ -134,8 +160,17 @@ socket.on('error', (error) => {
 });
 
 socket.on('lobby-created', (data) => {
+    console.log('=== LOBBY CREATED EVENT ===');
+    console.log('Received data:', data);
+    console.log('data.isAdmin:', data.isAdmin);
+    
     currentLobbyCode = data.lobbyCode;
     currentLobby = data.lobby;
+    isAdmin = data.isAdmin; // Admin Status setzen
+    
+    console.log('After setting - isAdmin:', isAdmin);
+    console.log('currentLobbyCode:', currentLobbyCode);
+    
     updateLobbyScreen();
     showScreen('lobby');
     showNotification(`Lobby ${data.lobbyCode} erstellt!`, 'success');
@@ -196,8 +231,8 @@ socket.on('lobby-closed', (message) => {
     isAdmin = false;
 });
 
-socket.on('game-started', (lobby) => {
-    currentLobby = lobby;
+socket.on('game-started', (data) => {
+    currentLobby = data.lobby;
     initializeGame();
     showScreen('game');
     showNotification('Spiel gestartet! 📹 Video-Call für alle Spieler verfügbar!', 'success');
@@ -1650,7 +1685,25 @@ function updateLobbyScreen() {
     
     // Start Button aktivieren/deaktivieren
     const startBtn = document.getElementById('start-game-btn');
-    startBtn.disabled = !isAdmin || currentLobby.players.length === 0;
+    console.log('updateLobbyScreen - isAdmin:', isAdmin);
+    console.log('updateLobbyScreen - players.length:', currentLobby.players.length);
+    console.log('updateLobbyScreen - button found:', !!startBtn);
+    
+    if (startBtn) {
+        startBtn.disabled = !isAdmin;
+        
+        if (isAdmin) {
+            startBtn.textContent = 'Spiel Starten';
+            startBtn.classList.remove('disabled');
+            startBtn.style.backgroundColor = '#4CAF50'; // Grün für Admin
+        } else {
+            startBtn.textContent = 'Nur Admin kann starten';
+            startBtn.classList.add('disabled');
+            startBtn.style.backgroundColor = '#666'; // Grau für Nicht-Admin
+        }
+    } else {
+        console.error('Start button not found!');
+    }
     
     // Video-Overlays mit echten Spielernamen aktualisieren
     updateVideoPlayerNames();
@@ -1742,10 +1795,9 @@ function generateGameBoard() {
             cell.className = 'question-cell';
             cell.textContent = points;
             
-            if (currentLobby.answeredQuestions.includes(questionKey)) {
-                cell.disabled = true;
-                cell.classList.add('disabled');
-            } else if (isAdmin) {
+            // Für endloses Spiel: Fragen werden nie permanent deaktiviert
+            // Sie werden nur kurz nach der Beantwortung grau, dann wieder aktiviert
+            if (isAdmin) {
                 cell.addEventListener('click', () => {
                     selectQuestion(category, points);
                 });
@@ -1864,11 +1916,12 @@ function processAnswer(correct) {
     if (isAdmin && currentQuestionData) {
         const currentPlayer = currentLobby.players[currentLobby.currentPlayer];
         
-        socket.emit('answer-result', {
+        console.log('Processing answer:', correct);
+        socket.emit('process-answer', {
             lobbyCode: currentLobbyCode,
             correct,
-            points: currentQuestionData.points,
-            playerId: currentPlayer.id
+            category: currentQuestionData.category,
+            points: currentQuestionData.points
         });
     }
 }

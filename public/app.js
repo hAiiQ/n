@@ -296,10 +296,37 @@ socket.on('buzzer-activated', (data) => {
         // Zeige Buzzer für Spieler (außer dem ursprünglichen Spieler)
         showBuzzer(data);
     } else {
-        // Admin sieht, dass Buzzer-Modus aktiv ist
-        showNotification(`Buzzer aktiv! ${data.originalPlayer} hat falsch geantwortet.`, 'warning');
-        updateAdminBuzzerControls();
+        // Admin sieht, dass Buzzer-Modus aktiv ist - Buttons ändern
+        showNotification(`${data.originalPlayer} hat falsch geantwortet! Buzzer aktiv.`, 'warning');
+        hideOriginalPlayerControls();
+        showBuzzerWaitControls();
     }
+});
+
+socket.on('scores-updated', (data) => {
+    console.log('Scores updated:', data);
+    
+    if (currentLobby) {
+        currentLobby.scores = data.scores;
+        updateGameScreen();
+        updateVideoPlayerNames();
+    }
+    
+    showNotification(`${data.playerName} -${data.pointsLost} Punkte`, 'error');
+});
+
+socket.on('answer-processed', (data) => {
+    console.log('Answer processed:', data);
+    
+    if (currentLobby) {
+        currentLobby.scores = data.scores;
+        currentLobby.currentPlayer = data.currentPlayer;
+        updateGameScreen();
+        updateVideoPlayerNames();
+    }
+    
+    showNotification(`${data.playerName} hat richtig geantwortet!`, 'success');
+    hideQuestion();
 });
 
 socket.on('buzzer-pressed', (data) => {
@@ -2040,10 +2067,19 @@ function hideQuestion() {
     // Buzzer-Controls entfernen (falls Admin)
     removeBuzzerControls();
     
+    // Wait-Controls entfernen
+    removeWaitControls();
+    
     // Close-Button zurücksetzen
     const closeBtn = document.getElementById('close-question-btn');
     if (closeBtn) {
         closeBtn.textContent = 'Schließen';
+    }
+    
+    // Admin-Controls wieder anzeigen
+    const adminControls = document.getElementById('admin-controls');
+    if (adminControls && isAdmin) {
+        adminControls.style.display = 'flex';
     }
 }
 
@@ -2155,13 +2191,17 @@ function pressBuzzer() {
 
 function showBuzzerPress(data) {
     if (isAdmin) {
-        // Admin bekommt Buttons für Bewertung
-        const adminControls = document.getElementById('admin-controls');
+        // Entferne Wait-Controls
+        removeWaitControls();
         
-        if (adminControls) {
+        // Zeige Buzzer-Player Controls
+        const questionContainer = document.querySelector('.question-container');
+        
+        if (questionContainer) {
             // Temporäre Buzzer-Controls hinzufügen
             const buzzerControls = document.createElement('div');
             buzzerControls.id = 'buzzer-controls';
+            buzzerControls.className = 'question-actions';
             buzzerControls.innerHTML = `
                 <div class="buzzer-admin-notification">
                     ${data.playerName} hat gebuzzert!
@@ -2171,7 +2211,7 @@ function showBuzzerPress(data) {
                 <button id="buzzer-close" class="btn btn-ghost">Frage schließen</button>
             `;
             
-            adminControls.appendChild(buzzerControls);
+            questionContainer.appendChild(buzzerControls);
             
             // Event Listeners
             document.getElementById('buzzer-correct').onclick = () => {
@@ -2216,6 +2256,54 @@ function updateAdminBuzzerControls() {
         if (closeBtn) {
             closeBtn.textContent = 'Buzzer schließen';
         }
+    }
+}
+
+function hideOriginalPlayerControls() {
+    if (isAdmin) {
+        const adminControls = document.getElementById('admin-controls');
+        if (adminControls) {
+            adminControls.style.display = 'none';
+        }
+    }
+}
+
+function showBuzzerWaitControls() {
+    if (isAdmin) {
+        const adminControls = document.getElementById('admin-controls');
+        if (adminControls) {
+            // Erstelle neue Wait-Controls
+            const waitControls = document.createElement('div');
+            waitControls.id = 'buzzer-wait-controls';
+            waitControls.className = 'question-actions';
+            waitControls.innerHTML = `
+                <div class="buzzer-wait-text">Warte auf Buzzer oder schließe die Frage...</div>
+                <button id="close-buzzer-btn" class="btn btn-ghost">Frage schließen</button>
+            `;
+            
+            adminControls.parentNode.appendChild(waitControls);
+            
+            // Event Listener für Schließen
+            document.getElementById('close-buzzer-btn').onclick = () => {
+                socket.emit('close-buzzer-question', {
+                    lobbyCode: currentLobbyCode
+                });
+                removeWaitControls();
+            };
+        }
+    }
+}
+
+function removeWaitControls() {
+    const waitControls = document.getElementById('buzzer-wait-controls');
+    if (waitControls) {
+        waitControls.remove();
+    }
+    
+    // Original Admin-Controls wieder anzeigen
+    const adminControls = document.getElementById('admin-controls');
+    if (adminControls) {
+        adminControls.style.display = 'flex';
     }
 }
 

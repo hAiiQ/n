@@ -666,6 +666,15 @@ body::before {
     border: 2px solid var(--warning-color);
 }
 
+.buzzer-wait-text {
+    color: var(--warning-color);
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    animation: pulse 2s infinite;
+}
+
 .question-text {
     font-size: 2rem;
     font-weight: 500;

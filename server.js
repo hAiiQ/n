@@ -227,16 +227,64 @@ io.on('connection', (socket) => {
                 console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered correctly: +${data.points} points`);
                 lobby.scores[playerId] += data.points;
                 
-                // Frage schließen bei richtiger Antwort
+                // Frage schließen bei richtiger Antwort - nächster Spieler
                 lobby.buzzerMode = false;
                 lobby.buzzerQuestion = null;
                 lobby.buzzerPlayers = [];
+                lobby.buzzerActivePlayer = null;
+                lobby.buzzerUsedPlayers = [];
+                
+                // Nächster Spieler
+                lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
+                
+                // Round-Check Logik
+                const totalQuestions = lobby.categories.length * 5;
+                const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
+                    const expectedPoints = lobby.currentRound === 1 ? 
+                        [100, 200, 300, 400, 500] : 
+                        [200, 400, 600, 800, 1000];
+                    
+                    return expectedPoints.some(points => {
+                        const keyPoints = lobby.currentRound === 1 ? points : points / 2;
+                        return q.includes(`-${keyPoints}`);
+                    });
+                }).length;
+                
+                if (currentRoundQuestions >= totalQuestions && lobby.currentRound === 1) {
+                    // Runde 2 starten
+                    lobby.currentRound = 2;
+                    lobby.currentPlayer = 0;
+                    lobby.answeredQuestions = [];
+                    
+                    io.to(data.lobbyCode).emit('round-end', {
+                        lobby: lobby,
+                        nextRound: 2
+                    });
+                    return;
+                } else if (currentRoundQuestions >= totalQuestions && lobby.currentRound === 2) {
+                    // Spiel beenden
+                    io.to(data.lobbyCode).emit('game-end', {
+                        lobby: lobby,
+                        finalScores: lobby.scores
+                    });
+                    return;
+                }
+                
+                // Update alle Clients mit neuen Scores
+                io.to(data.lobbyCode).emit('answer-processed', {
+                    correct: true,
+                    playerName: lobby.players[lobby.currentPlayer].name,
+                    scores: lobby.scores,
+                    currentPlayer: lobby.currentPlayer
+                });
+                
+                return; // Early return - Frage ist beendet
             } else {
                 console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered incorrectly: -${Math.floor(data.points * 0.5)} points`);
-                // Bei falscher Antwort: 50% der Punkte abziehen (negative Scores erlaubt)
+                // Bei falscher Antwort: SOFORT 50% der Punkte abziehen
                 lobby.scores[playerId] -= Math.floor(data.points * 0.5);
                 
-                // Buzzer-Modus aktivieren für andere Spieler (Reset für neue Frage)
+                // Buzzer-Modus aktivieren für andere Spieler
                 lobby.buzzerMode = true;
                 lobby.buzzerQuestion = {
                     category: data.category,
@@ -250,64 +298,26 @@ io.on('connection', (socket) => {
                 
                 console.log('Buzzer mode activated - other players can now steal the question');
                 
+                // Sofort Scores an alle senden (Original-Spieler hat bereits Minus-Punkte)
+                io.to(data.lobbyCode).emit('scores-updated', {
+                    scores: lobby.scores,
+                    playerName: lobby.players[lobby.currentPlayer].name,
+                    pointsLost: Math.floor(data.points * 0.5)
+                });
+                
                 // Informiere alle Clients über Buzzer-Modus
                 io.to(data.lobbyCode).emit('buzzer-activated', {
                     category: data.category,
                     points: data.points,
                     originalPlayer: lobby.players[lobby.currentPlayer].name,
+                    originalPlayerIndex: lobby.currentPlayer,
                     excludedPlayers: [...lobby.buzzerUsedPlayers, lobby.currentPlayer] // Bereits verwendete Spieler + aktueller Spieler
                 });
                 
                 // Return early - warten auf Buzzer oder Admin-Schließung
                 return;
             }
-            
-            console.log(`New score for ${lobby.players[lobby.currentPlayer].name}: ${lobby.scores[playerId]}`);
         }
-        
-        // Nächster Spieler
-        lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
-        
-        // Prüfen ob alle Fragen der aktuellen Runde beantwortet wurden
-        const totalQuestions = lobby.categories.length * 5; // 5 Kategorien * 5 Fragen = 25 Fragen pro Runde
-        const questionsPerRound = totalQuestions;
-        
-        // Zählen der beantworteten Fragen in der aktuellen Runde
-        const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
-            const expectedPoints = lobby.currentRound === 1 ? 
-                [100, 200, 300, 400, 500] : 
-                [200, 400, 600, 800, 1000];
-            
-            return expectedPoints.some(points => {
-                const keyPoints = lobby.currentRound === 1 ? points : points / 2;
-                return q.includes(`-${keyPoints}`);
-            });
-        }).length;
-        
-        console.log(`Round ${lobby.currentRound}: ${currentRoundQuestions}/${questionsPerRound} questions answered`);
-        
-        if (currentRoundQuestions >= questionsPerRound && lobby.currentRound === 1) {
-            // Alle Fragen von Runde 1 beantwortet - Runde 2 starten
-            lobby.currentRound = 2;
-            lobby.currentPlayer = 0;
-            
-            // Für Runde 2: answeredQuestions leeren, damit alle Buttons wieder verfügbar sind
-            lobby.answeredQuestions = [];
-            
-            console.log('Starting Round 2! Cleared answered questions for fresh start.');
-            
-            io.to(data.lobbyCode).emit('round-end', {
-                lobby,
-                nextRound: 2
-            });
-        } else {
-            // Normale Antwort-Verarbeitung
-            io.to(data.lobbyCode).emit('answer-processed', {
-                lobby
-            });
-        }
-        
-        console.log(`Next player: ${lobby.players[lobby.currentPlayer] ? lobby.players[lobby.currentPlayer].name : 'Unknown'}`);
     });
     
     // Video Call Events
@@ -475,13 +485,44 @@ io.on('connection', (socket) => {
         // Nächster Spieler
         lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
         
-        console.log('Admin closed buzzer question');
+        console.log('Admin closed buzzer question - question permanently closed');
         
-        // Update alle Clients
-        io.to(data.lobbyCode).emit('buzzer-closed', {
-            currentPlayer: lobby.currentPlayer,
-            scores: lobby.scores
-        });
+        // Round-Check Logik
+        const totalQuestions = lobby.categories.length * 5;
+        const currentRoundQuestions = lobby.answeredQuestions.filter(q => {
+            const expectedPoints = lobby.currentRound === 1 ? 
+                [100, 200, 300, 400, 500] : 
+                [200, 400, 600, 800, 1000];
+            
+            return expectedPoints.some(points => {
+                const keyPoints = lobby.currentRound === 1 ? points : points / 2;
+                return q.includes(`-${keyPoints}`);
+            });
+        }).length;
+        
+        if (currentRoundQuestions >= totalQuestions && lobby.currentRound === 1) {
+            // Runde 2 starten
+            lobby.currentRound = 2;
+            lobby.currentPlayer = 0;
+            lobby.answeredQuestions = [];
+            
+            io.to(data.lobbyCode).emit('round-end', {
+                lobby: lobby,
+                nextRound: 2
+            });
+        } else if (currentRoundQuestions >= totalQuestions && lobby.currentRound === 2) {
+            // Spiel beenden
+            io.to(data.lobbyCode).emit('game-end', {
+                lobby: lobby,
+                finalScores: lobby.scores
+            });
+        } else {
+            // Update alle Clients
+            io.to(data.lobbyCode).emit('buzzer-closed', {
+                currentPlayer: lobby.currentPlayer,
+                scores: lobby.scores
+            });
+        }
     });
     
     // Verbindung getrennt

@@ -2313,6 +2313,18 @@ function processAnswer(correct) {
         const currentPlayer = currentLobby.players[currentLobby.currentPlayer];
         
         console.log('Processing answer:', correct);
+        
+        // Sofort UI anpassen basierend auf Antwort
+        if (!correct) {
+            // Falsche Antwort - sofort zu Buzzer-Modus wechseln
+            hideOriginalPlayerControls();
+            showBuzzerWaitControls();
+            showNotification(`${currentPlayer.name} hat falsch geantwortet! Warte auf Buzzer...`, 'warning');
+        } else {
+            // Richtige Antwort - sofort Frage schließen
+            showNotification(`${currentPlayer.name} hat richtig geantwortet!`, 'success');
+        }
+        
         socket.emit('process-answer', {
             lobbyCode: currentLobbyCode,
             correct,

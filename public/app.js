@@ -8,6 +8,7 @@ let currentLobby = null;
 let currentQuestionData = null;
 let questionTimer = null;
 let questionTimeLeft = 30;
+let isBuzzerMode = false;
 
 // WebRTC Manager - Alle Video-Funktionen zentral verwaltet
 let myVideoSlot = null;
@@ -339,6 +340,9 @@ socket.on('buzzer-pressed', (data) => {
 socket.on('buzzer-resolved', (data) => {
     console.log('Buzzer resolved:', data);
     
+    // Buzzer-Modus beenden
+    isBuzzerMode = false;
+    
     hideBuzzer();
     
     if (data.success) {
@@ -361,6 +365,9 @@ socket.on('buzzer-resolved', (data) => {
 
 socket.on('buzzer-closed', (data) => {
     console.log('Buzzer closed by admin:', data);
+    
+    // Buzzer-Modus beenden
+    isBuzzerMode = false;
     
     hideBuzzer();
     showNotification('Frage wurde vom Admin geschlossen', 'info');
@@ -2027,9 +2034,9 @@ function showQuestion(data) {
         }
     }
     
-    // Admin Controls anzeigen/verstecken
+    // Admin Controls anzeigen/verstecken (nur wenn nicht im Buzzer-Modus)
     const adminControls = document.getElementById('admin-controls');
-    if (isAdmin) {
+    if (isAdmin && !isBuzzerMode) {
         adminControls.style.display = 'flex';
         
         // Event Listener für Antwort-Buttons
@@ -2060,6 +2067,9 @@ function hideQuestion() {
     
     // Timer stoppen
     stopQuestionTimer();
+    
+    // Buzzer-Modus beenden
+    isBuzzerMode = false;
     
     // Buzzer verstecken
     hideBuzzer();
@@ -2326,11 +2336,13 @@ function processAnswer(correct) {
         // Sofort UI anpassen basierend auf Antwort
         if (!correct) {
             // Falsche Antwort - sofort zu Buzzer-Modus wechseln
+            isBuzzerMode = true;
             hideOriginalPlayerControls();
             showBuzzerWaitControls();
             showNotification(`${currentPlayer.name} hat falsch geantwortet! Warte auf Buzzer...`, 'warning');
         } else {
             // Richtige Antwort - sofort Frage schließen
+            isBuzzerMode = false;
             showNotification(`${currentPlayer.name} hat richtig geantwortet!`, 'success');
         }
         

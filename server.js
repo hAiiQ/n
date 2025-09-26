@@ -57,6 +57,8 @@ io.on('connection', (socket) => {
             buzzerMode: false, // Buzzer-Modus aktiv
             buzzerQuestion: null, // Aktuelle Buzzer-Frage
             buzzerPlayers: [], // Spieler die gebuzzert haben
+            buzzerActivePlayer: null, // Aktuell aktiver Buzzer-Spieler
+            buzzerUsedPlayers: [], // Spieler die bereits bei dieser Frage gebuzzert haben
             categories: [
                 'Rund um Marvel',
                 'Team-Ups', 
@@ -180,6 +182,11 @@ io.on('connection', (socket) => {
         
         const question = getQuestion(data.category, data.points, lobby.currentRound);
         
+        // Reset Buzzer-System für neue Frage
+        lobby.buzzerUsedPlayers = [];
+        lobby.buzzerActivePlayer = null;
+        lobby.buzzerMode = false;
+        
         io.to(data.lobbyCode).emit('question-selected', {
             category: data.category,
             points: data.points,
@@ -229,7 +236,7 @@ io.on('connection', (socket) => {
                 // Bei falscher Antwort: 50% der Punkte abziehen (negative Scores erlaubt)
                 lobby.scores[playerId] -= Math.floor(data.points * 0.5);
                 
-                // Buzzer-Modus aktivieren für andere Spieler
+                // Buzzer-Modus aktivieren für andere Spieler (Reset für neue Frage)
                 lobby.buzzerMode = true;
                 lobby.buzzerQuestion = {
                     category: data.category,
@@ -238,6 +245,8 @@ io.on('connection', (socket) => {
                     originalPlayer: lobby.currentPlayer
                 };
                 lobby.buzzerPlayers = [];
+                lobby.buzzerActivePlayer = null;
+                // buzzerUsedPlayers wird NICHT zurückgesetzt - bleibt für diese Frage bestehen
                 
                 console.log('Buzzer mode activated - other players can now steal the question');
                 
@@ -245,7 +254,8 @@ io.on('connection', (socket) => {
                 io.to(data.lobbyCode).emit('buzzer-activated', {
                     category: data.category,
                     points: data.points,
-                    originalPlayer: lobby.players[lobby.currentPlayer].name
+                    originalPlayer: lobby.players[lobby.currentPlayer].name,
+                    excludedPlayers: [...lobby.buzzerUsedPlayers, lobby.currentPlayer] // Bereits verwendete Spieler + aktueller Spieler
                 });
                 
                 // Return early - warten auf Buzzer oder Admin-Schließung
@@ -350,8 +360,9 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Prüfe ob Spieler bereits gebuzzert hat
-        if (lobby.buzzerPlayers.find(p => p.id === socket.id)) {
+        // Prüfe ob bereits ein Spieler aktiv ist
+        if (lobby.buzzerActivePlayer !== null) {
+            console.log(`Buzzer blocked - ${lobby.buzzerActivePlayer} is already active`);
             return;
         }
         
@@ -360,13 +371,32 @@ io.on('connection', (socket) => {
             return;
         }
         
-        lobby.buzzerPlayers.push({
-            id: socket.id,
-            name: player.name,
-            time: Date.now()
+        // Prüfe ob Spieler original-Spieler ist
+        if (lobby.buzzerQuestion && lobby.buzzerQuestion.originalPlayer === lobby.players.findIndex(p => p.id === socket.id)) {
+            console.log(`Buzzer blocked - ${player.name} is original player`);
+            return;
+        }
+        
+        // Prüfe ob Spieler bereits bei dieser Frage gebuzzert hat
+        if (lobby.buzzerUsedPlayers.includes(socket.id)) {
+            console.log(`Buzzer blocked - ${player.name} already used buzzer for this question`);
+            return;
+        }
+        
+        // Spieler ist jetzt aktiv
+        lobby.buzzerActivePlayer = socket.id;
+        lobby.buzzerUsedPlayers.push(socket.id);
+        
+        console.log(`${player.name} has pressed the buzzer and is now active!`);
+        
+        // Buzzer für alle anderen deaktivieren
+        io.to(data.lobbyCode).emit('buzzer-locked', {
+            activePlayerName: player.name,
+            activePlayerId: socket.id
         });
         
-        console.log(`${player.name} has pressed the buzzer!`);
+        // Timer zurücksetzen Signal an alle Clients
+        io.to(data.lobbyCode).emit('reset-timer');
         
         // Informiere Admin über Buzzer-Press
         io.to(lobby.admin).emit('buzzer-pressed', {
@@ -388,22 +418,36 @@ io.on('connection', (socket) => {
         }
         
         if (data.correct) {
-            // Richtige Antwort - volle Punkte
+            // Richtige Antwort - volle Punkte - Frage komplett beenden
             lobby.scores[data.playerId] += lobby.buzzerQuestion.points;
             console.log(`${buzzerPlayer.name} stole the question correctly: +${lobby.buzzerQuestion.points} points`);
+            
+            // Buzzer-Modus komplett beenden
+            lobby.buzzerMode = false;
+            lobby.buzzerQuestion = null;
+            lobby.buzzerPlayers = [];
+            lobby.buzzerActivePlayer = null;
+            lobby.buzzerUsedPlayers = []; // Reset für nächste Frage
+            
+            // Nächster Spieler
+            lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
         } else {
-            // Falsche Antwort - halbe Punkte Abzug
+            // Falsche Antwort - halbe Punkte Abzug - Buzzer bleibt aktiv für andere
             lobby.scores[data.playerId] -= Math.floor(lobby.buzzerQuestion.points * 0.5);
             console.log(`${buzzerPlayer.name} answered stolen question incorrectly: -${Math.floor(lobby.buzzerQuestion.points * 0.5)} points`);
+            
+            // Buzzer-Modus bleibt aktiv, aber aktueller Spieler wird zurückgesetzt
+            lobby.buzzerActivePlayer = null;
+            // buzzerUsedPlayers bleibt bestehen (Spieler kann nicht nochmal)
+            
+            // Buzzer wieder aktivieren für andere Spieler
+            io.to(data.lobbyCode).emit('buzzer-reactivated', {
+                excludedPlayers: [...lobby.buzzerUsedPlayers, lobby.buzzerQuestion.originalPlayer]
+            });
+            
+            // Return early - Buzzer bleibt aktiv
+            return;
         }
-        
-        // Buzzer-Modus beenden
-        lobby.buzzerMode = false;
-        lobby.buzzerQuestion = null;
-        lobby.buzzerPlayers = [];
-        
-        // Nächster Spieler
-        lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
         
         // Update alle Clients
         io.to(data.lobbyCode).emit('buzzer-resolved', {
@@ -421,10 +465,12 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Buzzer-Modus beenden ohne Punkte zu vergeben
+        // Buzzer-Modus komplett beenden ohne Punkte zu vergeben
         lobby.buzzerMode = false;
         lobby.buzzerQuestion = null;
         lobby.buzzerPlayers = [];
+        lobby.buzzerActivePlayer = null;
+        lobby.buzzerUsedPlayers = []; // Reset für nächste Frage
         
         // Nächster Spieler
         lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;

@@ -350,6 +350,47 @@ socket.on('buzzer-closed', (data) => {
     hideQuestion();
 });
 
+// Neue Buzzer Events
+socket.on('buzzer-locked', (data) => {
+    console.log('Buzzer locked:', data);
+    
+    // Buzzer für alle außer aktivem Spieler deaktivieren
+    const buzzerBtn = document.getElementById('buzzer-btn');
+    if (buzzerBtn && data.activePlayerId !== socket.id) {
+        buzzerBtn.disabled = true;
+        buzzerBtn.classList.add('disabled');
+        showNotification(`${data.activePlayerName} ist dran!`, 'warning');
+    }
+});
+
+socket.on('buzzer-reactivated', (data) => {
+    console.log('Buzzer reactivated:', data);
+    
+    // Prüfe ob aktueller Spieler buzzern darf
+    const currentPlayerIndex = currentLobby ? currentLobby.players.findIndex(p => p.id === socket.id) : -1;
+    const canBuzz = !data.excludedPlayers.includes(currentPlayerIndex) && !data.excludedPlayers.includes(socket.id);
+    
+    if (canBuzz) {
+        const buzzerBtn = document.getElementById('buzzer-btn');
+        if (buzzerBtn) {
+            buzzerBtn.disabled = false;
+            buzzerBtn.classList.remove('disabled');
+            showNotification('Buzzer wieder verfügbar!', 'info');
+        }
+    }
+});
+
+socket.on('reset-timer', () => {
+    console.log('Timer reset signal received');
+    
+    // Timer zurücksetzen
+    if (questionTimer) {
+        stopQuestionTimer();
+        startQuestionTimer();
+        showNotification('Timer zurückgesetzt!', 'info');
+    }
+});
+
 // Video Call Events - VERBESSERT mit besserem Timing
 socket.on('player-joined-call-notification', (data) => {
     console.log(`📢 Spieler beigetreten-Notification:`, data);
@@ -2061,16 +2102,27 @@ function showBuzzer(data) {
     const buzzerArea = document.getElementById('buzzer-area');
     const buzzerBtn = document.getElementById('buzzer-btn');
     
-    if (buzzerArea && buzzerBtn) {
+    // Prüfe ob aktueller Spieler buzzern darf
+    const currentPlayerIndex = currentLobby ? currentLobby.players.findIndex(p => p.id === socket.id) : -1;
+    const canBuzz = !data.excludedPlayers.includes(currentPlayerIndex) && !data.excludedPlayers.includes(socket.id);
+    
+    if (buzzerArea) {
         buzzerArea.classList.remove('hidden');
         
-        buzzerBtn.onclick = () => {
-            pressBuzzer();
-        };
-        
-        // Buzzer-Button aktivieren
-        buzzerBtn.disabled = false;
-        buzzerBtn.classList.remove('disabled');
+        if (buzzerBtn && canBuzz) {
+            buzzerBtn.onclick = () => {
+                pressBuzzer();
+            };
+            
+            // Buzzer-Button aktivieren
+            buzzerBtn.disabled = false;
+            buzzerBtn.classList.remove('disabled');
+        } else if (buzzerBtn) {
+            // Spieler kann nicht buzzern (bereits dran gewesen oder Original-Spieler)
+            buzzerBtn.disabled = true;
+            buzzerBtn.classList.add('disabled');
+            showNotification('Du kannst bei dieser Frage nicht mehr buzzern', 'warning');
+        }
     }
 }
 

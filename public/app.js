@@ -296,10 +296,9 @@ socket.on('buzzer-activated', (data) => {
         // Zeige Buzzer für Spieler (außer dem ursprünglichen Spieler)
         showBuzzer(data);
     } else {
-        // Admin sieht, dass Buzzer-Modus aktiv ist - Buttons ändern
-        showNotification(`${data.originalPlayer} hat falsch geantwortet! Buzzer aktiv.`, 'warning');
-        hideOriginalPlayerControls();
-        showBuzzerWaitControls();
+        // Admin: Nur Notification, UI wurde bereits in processAnswer() geändert
+        // Keine doppelte UI-Änderung
+        console.log('Buzzer activated - UI already updated locally');
     }
 });
 
@@ -2192,14 +2191,15 @@ function pressBuzzer() {
 
 function showBuzzerPress(data) {
     if (isAdmin) {
-        // Entferne Wait-Controls
+        // Entferne Wait-Controls und alte Buzzer-Controls
         removeWaitControls();
+        removeBuzzerControls();
         
         // Zeige Buzzer-Player Controls
         const questionContainer = document.querySelector('.question-container');
         
-        if (questionContainer) {
-            // Temporäre Buzzer-Controls hinzufügen
+        if (questionContainer && !document.getElementById('buzzer-controls')) {
+            // Temporäre Buzzer-Controls hinzufügen nur wenn noch nicht vorhanden
             const buzzerControls = document.createElement('div');
             buzzerControls.id = 'buzzer-controls';
             buzzerControls.className = 'question-actions';
@@ -2271,26 +2271,31 @@ function hideOriginalPlayerControls() {
 
 function showBuzzerWaitControls() {
     if (isAdmin) {
+        // Entferne erst alle existierenden Wait-Controls um Duplikate zu verhindern
+        removeWaitControls();
+        
         const adminControls = document.getElementById('admin-controls');
         if (adminControls) {
-            // Erstelle neue Wait-Controls
-            const waitControls = document.createElement('div');
-            waitControls.id = 'buzzer-wait-controls';
-            waitControls.className = 'question-actions';
-            waitControls.innerHTML = `
-                <div class="buzzer-wait-text">Warte auf Buzzer oder schließe die Frage...</div>
-                <button id="close-buzzer-btn" class="btn btn-ghost">Frage schließen</button>
-            `;
-            
-            adminControls.parentNode.appendChild(waitControls);
-            
-            // Event Listener für Schließen
-            document.getElementById('close-buzzer-btn').onclick = () => {
-                socket.emit('close-buzzer-question', {
-                    lobbyCode: currentLobbyCode
-                });
-                removeWaitControls();
-            };
+            // Erstelle neue Wait-Controls nur wenn noch nicht vorhanden
+            if (!document.getElementById('buzzer-wait-controls')) {
+                const waitControls = document.createElement('div');
+                waitControls.id = 'buzzer-wait-controls';
+                waitControls.className = 'question-actions';
+                waitControls.innerHTML = `
+                    <div class="buzzer-wait-text">Warte auf Buzzer oder schließe die Frage...</div>
+                    <button id="close-buzzer-btn" class="btn btn-ghost">Frage schließen</button>
+                `;
+                
+                adminControls.parentNode.appendChild(waitControls);
+                
+                // Event Listener für Schließen
+                document.getElementById('close-buzzer-btn').onclick = () => {
+                    socket.emit('close-buzzer-question', {
+                        lobbyCode: currentLobbyCode
+                    });
+                    removeWaitControls();
+                };
+            }
         }
     }
 }
@@ -2301,9 +2306,13 @@ function removeWaitControls() {
         waitControls.remove();
     }
     
+    // Entferne auch mehrfache Wait-Controls (falls vorhanden)
+    const allWaitControls = document.querySelectorAll('[id*="buzzer-wait"]');
+    allWaitControls.forEach(control => control.remove());
+    
     // Original Admin-Controls wieder anzeigen
     const adminControls = document.getElementById('admin-controls');
-    if (adminControls) {
+    if (adminControls && isAdmin) {
         adminControls.style.display = 'flex';
     }
 }

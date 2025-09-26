@@ -275,7 +275,8 @@ io.on('connection', (socket) => {
                     correct: true,
                     playerName: lobby.players[lobby.currentPlayer].name,
                     scores: lobby.scores,
-                    currentPlayer: lobby.currentPlayer
+                    currentPlayer: lobby.currentPlayer,
+                    lobby: lobby // Ganzer Lobby-State inklusive answeredQuestions
                 });
                 
                 return; // Early return - Frage ist beendet
@@ -464,7 +465,8 @@ io.on('connection', (socket) => {
             success: data.correct,
             playerName: buzzerPlayer.name,
             scores: lobby.scores,
-            currentPlayer: lobby.currentPlayer
+            currentPlayer: lobby.currentPlayer,
+            lobby: lobby // Ganzer Lobby-State inklusive answeredQuestions
         });
     });
     
@@ -520,7 +522,8 @@ io.on('connection', (socket) => {
             // Update alle Clients
             io.to(data.lobbyCode).emit('buzzer-closed', {
                 currentPlayer: lobby.currentPlayer,
-                scores: lobby.scores
+                scores: lobby.scores,
+                lobby: lobby // Ganzer Lobby-State inklusive answeredQuestions
             });
         }
     });

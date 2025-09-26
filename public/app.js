@@ -318,14 +318,15 @@ socket.on('scores-updated', (data) => {
 socket.on('answer-processed', (data) => {
     console.log('Answer processed:', data);
     
-    if (currentLobby) {
-        currentLobby.scores = data.scores;
-        currentLobby.currentPlayer = data.currentPlayer;
+    // Kompletten Lobby-State aktualisieren
+    if (data.lobby) {
+        currentLobby = data.lobby;
         updateGameScreen();
         updateVideoPlayerNames();
+        generateGameBoard(); // Board neu generieren um graue Buttons zu zeigen
     }
     
-    showNotification(`${data.playerName} hat richtig geantwortet!`, 'success');
+    showNotification(`Richtige Antwort! Nächster Spieler ist dran.`, 'success');
     hideQuestion();
 });
 
@@ -342,17 +343,17 @@ socket.on('buzzer-resolved', (data) => {
     hideBuzzer();
     
     if (data.success) {
-        showNotification(`${data.playerName} hat die Frage gestohlen! +${currentQuestionData.points} Punkte`, 'success');
+        showNotification(`${data.playerName} hat die Frage gestohlen! +${currentQuestionData ? currentQuestionData.points : 'Punkte'}`, 'success');
     } else {
         showNotification(`${data.playerName} hat falsch geantwortet. -50% Punkte`, 'error');
     }
     
-    // Scores und aktuellen Spieler aktualisieren
-    if (currentLobby) {
-        currentLobby.scores = data.scores;
-        currentLobby.currentPlayer = data.currentPlayer;
+    // Kompletten Lobby-State aktualisieren
+    if (data.lobby) {
+        currentLobby = data.lobby;
         updateGameScreen();
         updateVideoPlayerNames();
+        generateGameBoard(); // Board neu generieren um graue Buttons zu zeigen
     }
     
     // Frage schließen
@@ -365,12 +366,12 @@ socket.on('buzzer-closed', (data) => {
     hideBuzzer();
     showNotification('Frage wurde vom Admin geschlossen', 'info');
     
-    // Scores und aktuellen Spieler aktualisieren
-    if (currentLobby) {
-        currentLobby.scores = data.scores;
-        currentLobby.currentPlayer = data.currentPlayer;
+    // Kompletten Lobby-State aktualisieren
+    if (data.lobby) {
+        currentLobby = data.lobby;
         updateGameScreen();
         updateVideoPlayerNames();
+        generateGameBoard(); // Board neu generieren um graue Buttons zu zeigen
     }
     
     // Frage schließen

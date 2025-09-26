@@ -134,10 +134,24 @@
                     <div class="question-container">
                         <div class="question-header">
                             <span id="question-category"></span> - <span id="question-points"></span> Punkte
+                            <div class="question-timer" id="question-timer">
+                                <div class="timer-circle">
+                                    <div class="timer-text">30</div>
+                                </div>
+                            </div>
                         </div>
                         <div class="question-text" id="question-text">
                             <!-- Frage wird hier angezeigt -->
                         </div>
+                        <!-- Buzzer für andere Spieler (erscheint nach falscher Antwort) -->
+                        <div class="buzzer-area hidden" id="buzzer-area">
+                            <div class="buzzer-text">Frage offen für andere Spieler!</div>
+                            <button id="buzzer-btn" class="buzzer-button">
+                                <div class="buzzer-icon">🔔</div>
+                                <div>BUZZER</div>
+                            </button>
+                        </div>
+                        
                         <div class="question-actions" id="admin-controls">
                             <button id="correct-answer-btn" class="btn btn-success">Richtig</button>
                             <button id="wrong-answer-btn" class="btn btn-danger">Falsch</button>

@@ -6,6 +6,8 @@ let isAdmin = false;
 let currentLobbyCode = null;
 let currentLobby = null;
 let currentQuestionData = null;
+let questionTimer = null;
+let questionTimeLeft = 30;
 
 // WebRTC Manager - Alle Video-Funktionen zentral verwaltet
 let myVideoSlot = null;
@@ -286,6 +288,68 @@ socket.on('error', (message) => {
     showNotification(message, 'error');
 });
 
+// Buzzer System Events
+socket.on('buzzer-activated', (data) => {
+    console.log('Buzzer activated for question:', data);
+    
+    if (!isAdmin) {
+        // Zeige Buzzer für Spieler (außer dem ursprünglichen Spieler)
+        showBuzzer(data);
+    } else {
+        // Admin sieht, dass Buzzer-Modus aktiv ist
+        showNotification(`Buzzer aktiv! ${data.originalPlayer} hat falsch geantwortet.`, 'warning');
+        updateAdminBuzzerControls();
+    }
+});
+
+socket.on('buzzer-pressed', (data) => {
+    if (isAdmin) {
+        // Admin bekommt Notification über Buzzer-Press
+        showBuzzerPress(data);
+    }
+});
+
+socket.on('buzzer-resolved', (data) => {
+    console.log('Buzzer resolved:', data);
+    
+    hideBuzzer();
+    
+    if (data.success) {
+        showNotification(`${data.playerName} hat die Frage gestohlen! +${currentQuestionData.points} Punkte`, 'success');
+    } else {
+        showNotification(`${data.playerName} hat falsch geantwortet. -50% Punkte`, 'error');
+    }
+    
+    // Scores und aktuellen Spieler aktualisieren
+    if (currentLobby) {
+        currentLobby.scores = data.scores;
+        currentLobby.currentPlayer = data.currentPlayer;
+        updateGameScreen();
+        updateVideoPlayerNames();
+    }
+    
+    // Frage schließen
+    hideQuestion();
+});
+
+socket.on('buzzer-closed', (data) => {
+    console.log('Buzzer closed by admin:', data);
+    
+    hideBuzzer();
+    showNotification('Frage wurde vom Admin geschlossen', 'info');
+    
+    // Scores und aktuellen Spieler aktualisieren
+    if (currentLobby) {
+        currentLobby.scores = data.scores;
+        currentLobby.currentPlayer = data.currentPlayer;
+        updateGameScreen();
+        updateVideoPlayerNames();
+    }
+    
+    // Frage schließen
+    hideQuestion();
+});
+
 // Video Call Events - VERBESSERT mit besserem Timing
 socket.on('player-joined-call-notification', (data) => {
     console.log(`📢 Spieler beigetreten-Notification:`, data);
@@ -526,28 +590,31 @@ class WebRTCManager {
         // EXPLIZITE Permission-Anfrage für bessere UX
         console.log('🔐 Frage Webcam/Mikrofon Berechtigung an...');
         
-        // Flexiblere Strategien - funktioniert mit allen Webcam-Typen
+        // Flexiblere Strategien - Audio deaktiviert für Discord Call
         const strategies = [
-            // Basis Video (funktioniert meistens)
+            // Basis Video ohne Audio (für Discord Call)
             {
                 video: true, 
-                audio: true,
-                name: 'Auto-Qualität'
+                audio: false,
+                name: 'Auto-Qualität (nur Video)'
             },
-            // Standard Qualität
+            // Standard Qualität ohne Audio (für Discord Call)
             {
                 video: { 
                     width: { ideal: 640 }, 
                     height: { ideal: 480 }
                 }, 
-                audio: true,
-                name: 'Standard Qualität'
-            },
-            // Ohne Audio falls Mikrofon Problem
-            {
-                video: true, 
                 audio: false,
-                name: 'Nur Video'
+                name: 'Standard Qualität (nur Video)'
+            },
+            // Hohe Qualität ohne Audio
+            {
+                video: { 
+                    width: { ideal: 1280 }, 
+                    height: { ideal: 720 }
+                }, 
+                audio: false,
+                name: 'Hohe Qualität (nur Video)'
             },
             // Minimale Constraints
             {
@@ -1914,11 +1981,190 @@ function showQuestion(data) {
     }
     
     document.getElementById('question-area').classList.remove('hidden');
+    
+    // Timer starten
+    startQuestionTimer();
 }
 
 function hideQuestion() {
     document.getElementById('question-area').classList.add('hidden');
     currentQuestionData = null;
+    
+    // Timer stoppen
+    stopQuestionTimer();
+    
+    // Buzzer verstecken
+    hideBuzzer();
+    
+    // Buzzer-Controls entfernen (falls Admin)
+    removeBuzzerControls();
+    
+    // Close-Button zurücksetzen
+    const closeBtn = document.getElementById('close-question-btn');
+    if (closeBtn) {
+        closeBtn.textContent = 'Schließen';
+    }
+}
+
+// Timer-Funktionen
+function startQuestionTimer() {
+    questionTimeLeft = 30;
+    updateTimerDisplay();
+    
+    questionTimer = setInterval(() => {
+        questionTimeLeft--;
+        updateTimerDisplay();
+        
+        if (questionTimeLeft <= 0) {
+            stopQuestionTimer();
+            // Timer läuft ab, aber triggert nichts - nur visuell
+        }
+    }, 1000);
+}
+
+function stopQuestionTimer() {
+    if (questionTimer) {
+        clearInterval(questionTimer);
+        questionTimer = null;
+    }
+}
+
+function updateTimerDisplay() {
+    const timerText = document.querySelector('.timer-text');
+    const timerCircle = document.querySelector('.timer-circle');
+    
+    if (timerText && timerCircle) {
+        timerText.textContent = questionTimeLeft;
+        
+        // Berechne den Fortschritt für das conic-gradient (30 Sekunden = 360 Grad)
+        const progress = ((30 - questionTimeLeft) / 30) * 360;
+        
+        // Farbe basierend auf verbleibender Zeit
+        let color = 'var(--primary-color)';
+        timerCircle.classList.remove('warning', 'danger');
+        
+        if (questionTimeLeft <= 10 && questionTimeLeft > 5) {
+            color = 'var(--warning-color)';
+            timerCircle.classList.add('warning');
+        } else if (questionTimeLeft <= 5) {
+            color = 'var(--error-color)';
+            timerCircle.classList.add('danger');
+        }
+        
+        // Update das conic-gradient
+        timerCircle.style.background = `conic-gradient(${color} ${progress}deg, transparent ${progress}deg)`;
+    }
+}
+
+// Buzzer-System Funktionen
+function showBuzzer(data) {
+    const buzzerArea = document.getElementById('buzzer-area');
+    const buzzerBtn = document.getElementById('buzzer-btn');
+    
+    if (buzzerArea && buzzerBtn) {
+        buzzerArea.classList.remove('hidden');
+        
+        buzzerBtn.onclick = () => {
+            pressBuzzer();
+        };
+        
+        // Buzzer-Button aktivieren
+        buzzerBtn.disabled = false;
+        buzzerBtn.classList.remove('disabled');
+    }
+}
+
+function hideBuzzer() {
+    const buzzerArea = document.getElementById('buzzer-area');
+    if (buzzerArea) {
+        buzzerArea.classList.add('hidden');
+    }
+}
+
+function pressBuzzer() {
+    const buzzerBtn = document.getElementById('buzzer-btn');
+    
+    if (buzzerBtn && !buzzerBtn.disabled) {
+        // Buzzer deaktivieren
+        buzzerBtn.disabled = true;
+        buzzerBtn.classList.add('disabled');
+        
+        // Animation
+        buzzerBtn.style.animation = 'buzzer-flash 0.5s ease-in-out';
+        
+        // Socket Event senden
+        socket.emit('buzzer-press', { 
+            lobbyCode: currentLobbyCode 
+        });
+        
+        showNotification('Buzzer gedrückt! Warte auf Admin...', 'info');
+    }
+}
+
+function showBuzzerPress(data) {
+    if (isAdmin) {
+        // Admin bekommt Buttons für Bewertung
+        const adminControls = document.getElementById('admin-controls');
+        
+        if (adminControls) {
+            // Temporäre Buzzer-Controls hinzufügen
+            const buzzerControls = document.createElement('div');
+            buzzerControls.id = 'buzzer-controls';
+            buzzerControls.innerHTML = `
+                <div class="buzzer-admin-notification">
+                    ${data.playerName} hat gebuzzert!
+                </div>
+                <button id="buzzer-correct" class="btn btn-success">Richtig (${data.playerName})</button>
+                <button id="buzzer-wrong" class="btn btn-danger">Falsch (${data.playerName})</button>
+                <button id="buzzer-close" class="btn btn-ghost">Frage schließen</button>
+            `;
+            
+            adminControls.appendChild(buzzerControls);
+            
+            // Event Listeners
+            document.getElementById('buzzer-correct').onclick = () => {
+                socket.emit('buzzer-answer', {
+                    lobbyCode: currentLobbyCode,
+                    playerId: data.playerId,
+                    correct: true
+                });
+                removeBuzzerControls();
+            };
+            
+            document.getElementById('buzzer-wrong').onclick = () => {
+                socket.emit('buzzer-answer', {
+                    lobbyCode: currentLobbyCode,
+                    playerId: data.playerId,
+                    correct: false
+                });
+                removeBuzzerControls();
+            };
+            
+            document.getElementById('buzzer-close').onclick = () => {
+                socket.emit('close-buzzer-question', {
+                    lobbyCode: currentLobbyCode
+                });
+                removeBuzzerControls();
+            };
+        }
+    }
+}
+
+function removeBuzzerControls() {
+    const buzzerControls = document.getElementById('buzzer-controls');
+    if (buzzerControls) {
+        buzzerControls.remove();
+    }
+}
+
+function updateAdminBuzzerControls() {
+    if (isAdmin) {
+        // Admin kann Frage schließen wenn Buzzer aktiv ist
+        const closeBtn = document.getElementById('close-question-btn');
+        if (closeBtn) {
+            closeBtn.textContent = 'Buzzer schließen';
+        }
+    }
 }
 
 function processAnswer(correct) {

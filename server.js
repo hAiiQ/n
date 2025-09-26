@@ -54,6 +54,9 @@ io.on('connection', (socket) => {
             answeredQuestions: [],
             recentlyAnswered: [], // Temporär deaktivierte Fragen
             videoCallParticipants: [], // Tracking für Video Call Teilnehmer
+            buzzerMode: false, // Buzzer-Modus aktiv
+            buzzerQuestion: null, // Aktuelle Buzzer-Frage
+            buzzerPlayers: [], // Spieler die gebuzzert haben
             categories: [
                 'Rund um Marvel',
                 'Team-Ups', 
@@ -216,10 +219,37 @@ io.on('connection', (socket) => {
             if (data.correct) {
                 console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered correctly: +${data.points} points`);
                 lobby.scores[playerId] += data.points;
+                
+                // Frage schließen bei richtiger Antwort
+                lobby.buzzerMode = false;
+                lobby.buzzerQuestion = null;
+                lobby.buzzerPlayers = [];
             } else {
                 console.log(`Player ${lobby.players[lobby.currentPlayer].name} answered incorrectly: -${Math.floor(data.points * 0.5)} points`);
                 // Bei falscher Antwort: 50% der Punkte abziehen (negative Scores erlaubt)
                 lobby.scores[playerId] -= Math.floor(data.points * 0.5);
+                
+                // Buzzer-Modus aktivieren für andere Spieler
+                lobby.buzzerMode = true;
+                lobby.buzzerQuestion = {
+                    category: data.category,
+                    points: data.points,
+                    questionKey: questionKey,
+                    originalPlayer: lobby.currentPlayer
+                };
+                lobby.buzzerPlayers = [];
+                
+                console.log('Buzzer mode activated - other players can now steal the question');
+                
+                // Informiere alle Clients über Buzzer-Modus
+                io.to(data.lobbyCode).emit('buzzer-activated', {
+                    category: data.category,
+                    points: data.points,
+                    originalPlayer: lobby.players[lobby.currentPlayer].name
+                });
+                
+                // Return early - warten auf Buzzer oder Admin-Schließung
+                return;
             }
             
             console.log(`New score for ${lobby.players[lobby.currentPlayer].name}: ${lobby.scores[playerId]}`);
@@ -309,6 +339,102 @@ io.on('connection', (socket) => {
         socket.to(data.to).emit('webrtc-ice-candidate', {
             from: socket.id,
             candidate: data.candidate
+        });
+    });
+    
+    // Buzzer-Events
+    socket.on('buzzer-press', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        
+        if (!lobby || !lobby.buzzerMode) {
+            return;
+        }
+        
+        // Prüfe ob Spieler bereits gebuzzert hat
+        if (lobby.buzzerPlayers.find(p => p.id === socket.id)) {
+            return;
+        }
+        
+        const player = lobby.players.find(p => p.id === socket.id);
+        if (!player) {
+            return;
+        }
+        
+        lobby.buzzerPlayers.push({
+            id: socket.id,
+            name: player.name,
+            time: Date.now()
+        });
+        
+        console.log(`${player.name} has pressed the buzzer!`);
+        
+        // Informiere Admin über Buzzer-Press
+        io.to(lobby.admin).emit('buzzer-pressed', {
+            playerName: player.name,
+            playerId: socket.id
+        });
+    });
+    
+    socket.on('buzzer-answer', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        
+        if (!lobby || socket.id !== lobby.admin || !lobby.buzzerMode) {
+            return;
+        }
+        
+        const buzzerPlayer = lobby.players.find(p => p.id === data.playerId);
+        if (!buzzerPlayer) {
+            return;
+        }
+        
+        if (data.correct) {
+            // Richtige Antwort - volle Punkte
+            lobby.scores[data.playerId] += lobby.buzzerQuestion.points;
+            console.log(`${buzzerPlayer.name} stole the question correctly: +${lobby.buzzerQuestion.points} points`);
+        } else {
+            // Falsche Antwort - halbe Punkte Abzug
+            lobby.scores[data.playerId] -= Math.floor(lobby.buzzerQuestion.points * 0.5);
+            console.log(`${buzzerPlayer.name} answered stolen question incorrectly: -${Math.floor(lobby.buzzerQuestion.points * 0.5)} points`);
+        }
+        
+        // Buzzer-Modus beenden
+        lobby.buzzerMode = false;
+        lobby.buzzerQuestion = null;
+        lobby.buzzerPlayers = [];
+        
+        // Nächster Spieler
+        lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
+        
+        // Update alle Clients
+        io.to(data.lobbyCode).emit('buzzer-resolved', {
+            success: data.correct,
+            playerName: buzzerPlayer.name,
+            scores: lobby.scores,
+            currentPlayer: lobby.currentPlayer
+        });
+    });
+    
+    socket.on('close-buzzer-question', (data) => {
+        const lobby = lobbies.get(data.lobbyCode);
+        
+        if (!lobby || socket.id !== lobby.admin || !lobby.buzzerMode) {
+            return;
+        }
+        
+        // Buzzer-Modus beenden ohne Punkte zu vergeben
+        lobby.buzzerMode = false;
+        lobby.buzzerQuestion = null;
+        lobby.buzzerPlayers = [];
+        
+        // Nächster Spieler
+        lobby.currentPlayer = (lobby.currentPlayer + 1) % lobby.players.length;
+        
+        console.log('Admin closed buzzer question');
+        
+        // Update alle Clients
+        io.to(data.lobbyCode).emit('buzzer-closed', {
+            currentPlayer: lobby.currentPlayer,
+            scores: lobby.scores
         });
     });
     

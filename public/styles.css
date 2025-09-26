@@ -500,8 +500,19 @@ body::before {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 999; /* Niedriger als Admin-Video, damit Admin-Kamera sichtbar bleibt */
     backdrop-filter: blur(10px);
+}
+
+/* Admin Video während Fragen hervorheben */
+.question-area:not(.hidden) ~ * .admin-video-fixed,
+.admin-video-fixed {
+    z-index: 1001; /* Über dem Question Area */
+}
+
+.question-area:not(.hidden) ~ * .admin-video-fixed {
+    border: 3px solid var(--success-color);
+    box-shadow: 0 8px 32px rgba(34, 197, 94, 0.5);
 }
 
 .question-area.hidden {
@@ -526,6 +537,133 @@ body::before {
     margin-bottom: 30px;
     padding-bottom: 20px;
     border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+/* Question Timer */
+.question-timer {
+    display: flex;
+    align-items: center;
+}
+
+.timer-circle {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: conic-gradient(var(--primary-color) 0deg, var(--primary-color) 0deg, transparent 0deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.timer-circle.warning {
+    border-color: var(--warning-color);
+    background: conic-gradient(var(--warning-color) 0deg, var(--warning-color) 0deg, transparent 0deg);
+    animation: pulse 0.5s infinite alternate;
+}
+
+.timer-circle.danger {
+    border-color: var(--error-color);
+    background: conic-gradient(var(--error-color) 0deg, var(--error-color) 0deg, transparent 0deg);
+    animation: pulse 0.3s infinite alternate;
+}
+
+.timer-text {
+    position: absolute;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.1); }
+}
+
+/* Buzzer System */
+.buzzer-area {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.buzzer-area.hidden {
+    display: none;
+}
+
+.buzzer-text {
+    color: var(--warning-color);
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+    animation: pulse 1s infinite;
+}
+
+.buzzer-button {
+    background: var(--gradient-primary);
+    border: 3px solid var(--warning-color);
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: 'Orbitron', monospace;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 8px 25px rgba(248, 113, 113, 0.4);
+    position: relative;
+    overflow: hidden;
+}
+
+.buzzer-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 35px rgba(248, 113, 113, 0.6);
+    border-color: var(--error-color);
+}
+
+.buzzer-button:active {
+    transform: scale(0.95);
+    background: var(--gradient-secondary);
+}
+
+.buzzer-button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.buzzer-icon {
+    font-size: 2rem;
+    margin-bottom: 5px;
+}
+
+@keyframes buzzer-flash {
+    0%, 100% { background: var(--gradient-primary); }
+    50% { background: var(--gradient-secondary); }
+}
+
+/* Buzzer Admin Controls */
+.buzzer-admin-notification {
+    background: var(--gradient-warning);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: bold;
+    text-align: center;
+    animation: pulse 1s infinite;
+    border: 2px solid var(--warning-color);
 }
 
 .question-text {
